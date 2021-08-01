@@ -29,17 +29,12 @@ class QuickCraps
 
   def stats
     @players.each do |p|
-      p.turns.each do |t|
-        t.print_stats
-      end
-    end
-    @players.each do |p|
-      puts "-"*20
+      puts "-"*60
       print p.name + ": "
-      p.turns.max_by {|t| t.stats.counts[:rolls]}.print_stats
-      puts "-"*20
+      p.turns.max_by {|t| t.stats.outcome_counts[:rolls]}.print_stats
+      puts "-"*60
     end
-    puts ("="*80) + "\n"
+    puts ("="*60) + "\n"
     p dice.freq
     self
   end
@@ -198,22 +193,32 @@ class PlayerRoll
 end
 
 class PlayerTurnStats
-  attr_reader :counts, :rolls
+  attr_reader :outcome_counts, :place_counts, :point_counts
 
   def initialize(player_turn)
     @player_turn = player_turn
-    @counts = Hash.new(0)
-    @rolls = 0
+    @outcome_counts = Hash.new(0)
+    @point_counts = Hash.new(0)
+    @place_counts = Hash.new(0)
   end
 
   def tally(roll)
     raise "no outcome yet" if roll.outcome.nil?
-    counts[:rolls] += 1
-    counts[roll.outcome] += 1
+    outcome_counts[:rolls] += 1
+    outcome_counts[roll.outcome] += 1
+
+    case roll.outcome
+    when PlayerRoll::PLACE_WINNER
+      @place_counts[roll.val] += 1
+    when PlayerRoll::POINT_WINNER
+      @point_counts[roll.val] += 1
+    end
   end
 
-  def inspect
-    counts
+  def print_stats
+    p outcome_counts
+    print "points: ", point_counts, "\n"
+    print "place: ", place_counts, "\n"
   end
 end
 
@@ -238,7 +243,7 @@ class PlayerTurn
 
   def print_stats
     p rolls
-    p stats
+    stats.print_stats
   end
 end
 
