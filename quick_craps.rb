@@ -30,7 +30,7 @@ class QuickCraps
   def stats
     @players.each do |p|
       p.turns.each do |t|
-        p t
+        t.print_stats
       end
     end
     puts "="*80
@@ -109,6 +109,8 @@ class CrapsGame
       end
     end
 
+    player_turn.keep_stats(roll)
+
     keep_rolling
   end
 
@@ -128,13 +130,13 @@ end
 class PlayerRoll
   POINT_ESTABLISHED = :point
   FRONT_LINE_WINNER = :front_line_winner
-  POINT_WINNER = :point_winner
-  PLACE_WINNER = :place_winner
-  CRAPS = :craps
-  HORN_WINNER = :horn
-  SEVEN_OUT = :seven_out
+  POINT_WINNER      = :point_winner
+  PLACE_WINNER      = :place_winner
+  CRAPS             = :craps
+  HORN_WINNER       = :horn
+  SEVEN_OUT         = :seven_out
 
-  ABBREVS = {
+  OUTCOME_SYMBOLS = {
     POINT_ESTABLISHED => "*",
     POINT_WINNER      => "!",
     FRONT_LINE_WINNER => "!",
@@ -149,6 +151,7 @@ class PlayerRoll
 
   def initialize(val)
     @val = val
+    @outcome = nil
   end
 
   def point_established
@@ -180,7 +183,7 @@ class PlayerRoll
   end
 
   def to_s
-    "#{val}#{ABBREVS[outcome]}"
+    "#{val}#{OUTCOME_SYMBOLS[outcome]}"
   end
 
   def inspect
@@ -188,12 +191,33 @@ class PlayerRoll
   end
 end
 
+class PlayerTurnStats
+  attr_reader :counts, :rolls
+
+  def initialize(player_turn)
+    @player_turn = player_turn
+    @counts = Hash.new(0)
+    @rolls = 0
+  end
+
+  def tally(roll)
+    raise "no outcome yet" if roll.outcome.nil?
+    counts[:rolls] += 1
+    counts[roll.outcome] += 1
+  end
+
+  def inspect
+    counts
+  end
+end
+
 class PlayerTurn
-  attr_reader :player, :rolls
+  attr_reader :player, :rolls, :stats
 
   def initialize(player)
     @player = player
     @rolls = []
+    @stats = PlayerTurnStats.new(self)
   end
 
   def roll
@@ -202,8 +226,13 @@ class PlayerTurn
     end
   end
 
-  def inspect
-    rolls
+  def keep_stats(roll)
+    stats.tally(roll)
+  end
+
+  def print_stats
+    p rolls
+    p stats
   end
 end
 
