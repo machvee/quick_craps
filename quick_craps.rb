@@ -33,7 +33,13 @@ class QuickCraps
         t.print_stats
       end
     end
-    puts "="*80
+    @players.each do |p|
+      puts "-"*20
+      print p.name + ": "
+      p.turns.max_by {|t| t.stats.counts[:rolls]}.print_stats
+      puts "-"*20
+    end
+    puts ("="*80) + "\n"
     p dice.freq
     self
   end
