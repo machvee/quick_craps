@@ -22,7 +22,7 @@ class QuickCraps
   end
 
   def run
-    (num_shooters * players.length).times do 
+    num_shooters.times do
       next_player_turn
     end
   end
@@ -33,6 +33,9 @@ class QuickCraps
         p t
       end
     end
+    puts "="*80
+    p dice.freq
+    self
   end
 
   private
@@ -132,13 +135,13 @@ class PlayerRoll
   SEVEN_OUT = :seven_out
 
   ABBREVS = {
-    POINT_ESTABLISHED => "p",
-    POINT_WINNER      => "P",
-    FRONT_LINE_WINNER => "W",
+    POINT_ESTABLISHED => "*",
+    POINT_WINNER      => "!",
+    FRONT_LINE_WINNER => "!",
     PLACE_WINNER      => "",
     CRAPS             => "x",
     HORN_WINNER       => "",
-    SEVEN_OUT         => "X",
+    SEVEN_OUT         => "x",
   }
 
   attr_reader :val
