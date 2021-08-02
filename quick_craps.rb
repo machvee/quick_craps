@@ -147,12 +147,21 @@ class PlayerRoll
     SEVEN_OUT         => "x",
   }
 
+  attr_reader :dice
   attr_reader :val
   attr_reader :outcome
 
-  def initialize(val)
-    @val = val
+  def initialize(dice)
+    @dice = dice
+    @val = nil
     @outcome = nil
+    @hard = false
+  end
+
+  def roll
+    dice.roll
+    @hard = dice.hard?
+    @val = dice.val
   end
 
   def point_established
@@ -184,7 +193,7 @@ class PlayerRoll
   end
 
   def to_s
-    "#{val}#{OUTCOME_SYMBOLS[outcome]}"
+    format("%d%s%s", val, @hard ? "h" : "", OUTCOME_SYMBOLS[outcome])
   end
 
   def inspect
@@ -232,7 +241,8 @@ class PlayerTurn
   end
 
   def roll
-    PlayerRoll.new(player.roll).tap do |r|
+    PlayerRoll.new(player.dice).tap do |r|
+      r.roll
       rolls << r
     end
   end
@@ -250,6 +260,7 @@ end
 class Player
   attr_reader :name
   attr_reader :turns
+  attr_reader :dice
 
   def initialize(name:)
     @name = name
@@ -280,7 +291,7 @@ class Die
 
   def initialize(set_to=nil)
     if set_to
-      set_to(val)
+      set(set_to)
     else
       roll
     end
@@ -313,6 +324,10 @@ class Dice
     shake
     keep_stats
     val
+  end
+
+  def hard?
+    [4,6,8,10].include?(val) && (@dies[0].val == @dies[1].val)
   end
 
   def to_s
