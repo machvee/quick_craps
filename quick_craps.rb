@@ -1,18 +1,23 @@
 class QuickCraps
-  attr_reader :players, :dice, :num_shooters
+  DEFAULT_NUM_PLAYERS = 6
+  DEFAULT_NUM_SHOOTERS = DEFAULT_NUM_PLAYERS * 1000
+  DEFAULT_BET_UNIT=25
+  DOUBLE_EVERY_OTHER_HIT = ->(bet_hit_count, current_bet) { bet_hit_count % 2 == 0 ? current_bet * 2 : current_bet }
 
-  def initialize(num_players: 5, num_shooters: 10)
+  attr_reader :players, :dice, :num_shooters, :shooter
+
+  def initialize(num_players: DEFAULT_NUM_PLAYERS, num_shooters: DEFAULT_NUM_SHOOTERS, bet_unit: DEFAULT_BET_UNIT)
     @players = create_players(num_players)
     @dice = Dice.new
     @next_player = 0
     @num_shooters = num_shooters
+    @shooter = nil
+    @press_stragegy = DOUBLE_EVERY_OTHER_HIT
   end
 
   def next_player_turn
-    @player = players[calc_next_player]
-    turn = @player.new_player_turn(dice)
-
-    play_craps(turn)
+    @shooter = players[calc_next_player]
+    play_craps(shooter.new_player_turn(dice))
   end
 
   def self.run(**args)
@@ -28,21 +33,35 @@ class QuickCraps
   end
 
   def stats
-    @players.each do |p|
+    {
+      players: players.map(&:stats),
+      dice: dice.stats
+    }
+  end
+
+  def print_stats
+    players.each do |p|
       puts "-"*60
       print p.name + ": "
-      p.turns.max_by {|t| t.stats.outcome_counts[:rolls]}.print_stats
+      p.stats.max_rolls_turn.print_stats
       puts "-"*60
+      puts "Average # Rolls before 7 Out: #{p.stats.avg_rolls}"
     end
     puts ("="*60) + "\n"
     p dice.freq
     self
   end
 
+  def inspect
+    "#{players.length} players, #{dice.total_rolls} rolls of dice"
+  end
+
   private
 
   def create_players(num_players)
-    num_players.times.each_with_object([]) {|n, p| p << Player.new(name: "Player#{n}")}
+    num_players.times.each_with_object([]) do |n, p|
+      p << Player.new(name: "Player#{n+1}")
+    end
   end
 
   def calc_next_player
@@ -53,12 +72,13 @@ class QuickCraps
     next_player_ind
   end
 
-  def play_craps(turn)
-    CrapsGame.new(turn).play!
+  def play_craps(player_turn)
+    Round.new(player_turn).play!
   end
 end
 
-class CrapsGame
+
+class Round
   OFF = 0
   ON = 1
   WINNERS=[7,11]
@@ -128,6 +148,7 @@ class CrapsGame
   end
 end
 
+
 class PlayerRoll
   POINT_ESTABLISHED = :point
   FRONT_LINE_WINNER = :front_line_winner
@@ -147,9 +168,10 @@ class PlayerRoll
     SEVEN_OUT         => "x",
   }
 
-  attr_reader :dice
   attr_reader :val
   attr_reader :outcome
+  attr_reader :dice
+  attr_reader :hard
 
   def initialize(dice)
     @dice = dice
@@ -193,7 +215,7 @@ class PlayerRoll
   end
 
   def to_s
-    format("%d%s%s", val, @hard ? "h" : "", OUTCOME_SYMBOLS[outcome])
+    format("%d%s%s", val, hard ? "h" : "", OUTCOME_SYMBOLS[outcome])
   end
 
   def inspect
@@ -201,61 +223,66 @@ class PlayerRoll
   end
 end
 
-class PlayerTurnStats
+
+class PlayerTurnStatsKeeper
   attr_reader :outcome_counts, :place_counts, :point_counts
 
-  def initialize(player_turn)
-    @player_turn = player_turn
+  def initialize
     @outcome_counts = Hash.new(0)
-    @point_counts = Hash.new(0)
-    @place_counts = Hash.new(0)
+    @place_counts   = Hash.new(0)
+    @point_counts   = Hash.new(0)
   end
 
-  def tally(roll)
-    raise "no outcome yet" if roll.outcome.nil?
-    outcome_counts[:rolls] += 1
-    outcome_counts[roll.outcome] += 1
+  def tally(player_roll)
+    raise "no outcome yet" if player_roll.outcome.nil?
 
-    case roll.outcome
+    outcome_counts[:total_rolls] += 1
+    outcome_counts[player_roll.outcome] += 1
+
+    case player_roll.outcome
     when PlayerRoll::PLACE_WINNER
-      @place_counts[roll.val] += 1
+      place_counts[player_roll.val] += 1
     when PlayerRoll::POINT_WINNER
-      @point_counts[roll.val] += 1
+      point_counts[player_roll.val] += 1
     end
   end
 
-  def print_stats
-    p outcome_counts
-    print "points: ", point_counts, "\n"
-    print "place: ", place_counts, "\n"
+  def to_h
+    {
+      outcomes:      outcome_counts,
+      point_winners: point_counts,
+      place_winners: place_counts
+    }
   end
 end
 
-class PlayerTurn
-  attr_reader :player, :rolls, :stats
 
-  def initialize(player)
+class PlayerTurn
+  attr_reader :dice, :player, :rolls, :stats_keeper
+
+  def initialize(player, dice)
+    @dice = dice
     @player = player
     @rolls = []
-    @stats = PlayerTurnStats.new(self)
+    @stats_keeper = PlayerTurnStatsKeeper.new
   end
 
   def roll
-    PlayerRoll.new(player.dice).tap do |r|
+    PlayerRoll.new(dice).tap do |r|
       r.roll
       rolls << r
     end
   end
 
   def keep_stats(roll)
-    stats.tally(roll)
+    stats_keeper.tally(roll)
   end
 
-  def print_stats
-    p rolls
-    stats.print_stats
+  def stats
+    stats_keeper.to_h
   end
 end
+
 
 class Player
   attr_reader :name
@@ -268,18 +295,29 @@ class Player
   end
 
   def new_player_turn(dice)
-    @dice = dice
-    PlayerTurn.new(self).tap do |turn|
+    PlayerTurn.new(self, dice).tap do |turn|
       @turns << turn
     end
   end
 
-  def roll
-    @dice.roll
+  def stats
+    {
+      name:                   name,
+      longest_roll:           longest_roll_stats,
+      avg_rolls_before_7_out: turns.sum {|t| t.stats[:outcomes][:total_rolls]} / turns.length
+    }
+  end
+
+  def longest_roll_stats
+    longest_turn = turns.max_by {|t| t.stats[:outcomes][:total_rolls]}
+    {
+      rolls: longest_turn.rolls.inspect,
+      stats: longest_turn.stats
+    }
   end
 
   def inspect
-    "#{name}: #{turns.length} turns.  Best: TBD"
+    "#{name}: #{turns.length} turns"
   end
 end
 
@@ -311,12 +349,13 @@ class Die
   end
 end
 
+
 class Dice
-  attr_reader :val, :freq
+  attr_reader :val, :total_rolls
 
   def initialize(num_dies=2)
     @dies = num_dies.times.each_with_object([]) {|n, o| o << Die.new}
-    @freq = Array.new(max_sum + 1)
+    @freqs = Array.new(max_sum + 1)
     reset
   end
 
@@ -330,21 +369,25 @@ class Dice
     [4,6,8,10].include?(val) && (@dies[0].val == @dies[1].val)
   end
 
+  def reset
+    @freqs.fill(0)
+    @total_rolls = 0
+    shake
+  end
+
+  def stats
+    {
+      total_rolls: @total_rolls,
+      frequency: @freqs[2..-1].map.with_index(2) {|v, i| [i, v]}.to_h
+    }
+  end
+
   def to_s
     format("%2d %s", val, @dies.inspect)
   end
 
   def inspect
     to_s
-  end
-
-  def reset
-    @freq.fill(0)
-    shake
-  end
-
-  def num_rolls
-    freq.sum
   end
 
   private
@@ -359,7 +402,8 @@ class Dice
   end
 
   def keep_stats
-    freq[val] += 1
+    @total_rolls += 1
+    @freqs[val] += 1
   end
 end
 
