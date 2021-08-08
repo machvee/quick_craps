@@ -2,7 +2,7 @@ class QuickCraps
   DEFAULT_NUM_PLAYERS = 6
   DEFAULT_NUM_SHOOTERS = DEFAULT_NUM_PLAYERS * 1000
   DEFAULT_BET_UNIT=25
-  DOUBLE_EVERY_OTHER_HIT = ->(bet_hit_count, current_bet) { bet_hit_count % 2 == 0 ? current_bet * 2 : current_bet }
+  DOUBLE_EVERY_OTHER_HIT = ->(bet_hit_count, current_bet) { bet_hit_count.even? ? current_bet * 2 : current_bet }
 
   attr_reader :players, :dice, :num_shooters, :shooter
 
@@ -37,19 +37,6 @@ class QuickCraps
       players: players.map(&:stats),
       dice: dice.stats
     }
-  end
-
-  def print_stats
-    players.each do |p|
-      puts "-"*60
-      print p.name + ": "
-      p.stats.max_rolls_turn.print_stats
-      puts "-"*60
-      puts "Average # Rolls before 7 Out: #{p.stats.avg_rolls}"
-    end
-    puts ("="*60) + "\n"
-    p dice.freq
-    self
   end
 
   def inspect
@@ -89,7 +76,7 @@ class Round
 
   def initialize(player_turn)
     @player_turn = player_turn
-    set_off
+    set_table_off
   end
 
   def play!
@@ -107,7 +94,7 @@ class Round
       when *WINNERS
         roll.winner
       when *POINTS
-        set_on(roll.val)
+        set_table_on(roll.val)
         roll.point_established
       when *CRAPS
         roll.craps
@@ -116,12 +103,12 @@ class Round
       case roll.val
       when 7
         roll.seven_out
-        set_off
+        set_table_off
         keep_rolling = false
       when *POINTS
         if roll.val == point
           roll.point_winner
-          set_off
+          set_table_off
         else
           roll.place_winner
         end
@@ -135,13 +122,13 @@ class Round
     keep_rolling
   end
 
-  def set_on(val)
+  def set_table_on(val)
     @point = val
     @state = ON
     self
   end
 
-  def set_off
+  def set_table_off
     @point = nil
     @state = OFF
     self
@@ -152,9 +139,9 @@ end
 class PlayerRoll
   POINT_ESTABLISHED = :point
   FRONT_LINE_WINNER = :front_line_winner
+  CRAPS             = :craps
   POINT_WINNER      = :point_winner
   PLACE_WINNER      = :place_winner
-  CRAPS             = :craps
   HORN_WINNER       = :horn
   SEVEN_OUT         = :seven_out
 
@@ -247,12 +234,21 @@ class PlayerTurnStatsKeeper
     end
   end
 
-  def to_h
+  def to_hash
     {
       outcomes:      outcome_counts,
       point_winners: point_counts,
       place_winners: place_counts
     }
+  end
+end
+
+
+class PlayerTurnBetMaker
+  attr_reader :player_turn, :pass, :pass_odds, :place, :hard_ways
+
+  def initialize(player_turn)
+    @player_turn = player_turn
   end
 end
 
@@ -265,6 +261,7 @@ class PlayerTurn
     @player = player
     @rolls = []
     @stats_keeper = PlayerTurnStatsKeeper.new
+    @bet_maker = PlayerTurnBetMaker.new(self)
   end
 
   def roll
@@ -279,7 +276,30 @@ class PlayerTurn
   end
 
   def stats
-    stats_keeper.to_h
+    stats_keeper.to_hash
+  end
+end
+
+
+class PlayerStats
+  def initialize(player)
+    @player = player
+  end
+
+  def to_hash
+    {
+      name:                   @player.name,
+      longest_roll:           longest_roll_stats,
+      avg_rolls_before_7_out: @player.turns.sum {|t| t.stats[:outcomes][:total_rolls]} / @player.turns.length
+    }
+  end
+
+  def longest_roll_stats
+    longest_turn = @player.turns.max_by {|t| t.stats[:outcomes][:total_rolls]}
+    {
+      rolls: longest_turn.rolls.inspect,
+      stats: longest_turn.stats
+    }
   end
 end
 
@@ -301,19 +321,7 @@ class Player
   end
 
   def stats
-    {
-      name:                   name,
-      longest_roll:           longest_roll_stats,
-      avg_rolls_before_7_out: turns.sum {|t| t.stats[:outcomes][:total_rolls]} / turns.length
-    }
-  end
-
-  def longest_roll_stats
-    longest_turn = turns.max_by {|t| t.stats[:outcomes][:total_rolls]}
-    {
-      rolls: longest_turn.rolls.inspect,
-      stats: longest_turn.stats
-    }
+    PlayerStats.new(self).to_hash
   end
 
   def inspect
