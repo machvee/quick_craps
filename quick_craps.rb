@@ -1,18 +1,24 @@
+#
+# QuickCraps - plays 1000's of shooters at a table, and keeps stats on their rolls/turns.
+#    Learn quickly how length of a shooters roll will translate to $$ win/loss.
+#    Provide procs that determine how to bet and how to press on Pass Line, Place, Hardways, and Field
+#    and compare strategies
+#
 class QuickCraps
   DEFAULT_NUM_PLAYERS = 6
   DEFAULT_NUM_SHOOTERS = DEFAULT_NUM_PLAYERS * 1000
-  DEFAULT_BET_UNIT=25
-  DOUBLE_EVERY_OTHER_HIT = ->(bet_hit_count, current_bet) { bet_hit_count.even? ? current_bet * 2 : current_bet }
+  BET_UNIT=25
+  TABLE_LIMIT=5000
+  PLACE_DOUBLE_EVERY_OTHER_HIT = ->(bet_box, bet_hit_count, orig_amount, winnings) { bet_hit_count.even? ? orig_amount : 0 }
 
   attr_reader :players, :dice, :num_shooters, :shooter
 
-  def initialize(num_players: DEFAULT_NUM_PLAYERS, num_shooters: DEFAULT_NUM_SHOOTERS, bet_unit: DEFAULT_BET_UNIT)
+  def initialize(num_players: DEFAULT_NUM_PLAYERS, num_shooters: DEFAULT_NUM_SHOOTERS)
     @players = create_players(num_players)
     @dice = Dice.new
     @next_player = 0
     @num_shooters = num_shooters
     @shooter = nil
-    @press_stragegy = DOUBLE_EVERY_OTHER_HIT
   end
 
   def next_player_turn
@@ -65,18 +71,184 @@ class QuickCraps
 end
 
 
-class Round
+class BetBox
+  attr_reader :name, :wins_on, :loses_on, :pays, :for_every, :vig
+
+  def initialize(name, wins_on, loses_on, pays, for_every, vig: 0, max_odds: nil)
+    @name = name 
+    @wins_on = wins_on
+    @loses_on = loses_on
+    @pays = pays
+    @for_every = for_every
+    @vig = vig
+    @max_odds = max_odds
+  end
+
+  def evaluate(player_roll, bet_amount)
+    if loses_on[player_roll]
+      -bet_amount
+    elsif wins_on[player_roll]
+      winnings(bet_amount)
+    else
+      0
+    end
+  end
+
+  def winnings(bet_amount)
+    win_amt = (bet_amount / for_every ) * pays
+    vig_amt = vig > 0 ? (amt * vig).floor : 0
+    win_amt - vig_amt
+  end
+
+  def valid?(amount)
+    return false if amount > QuickCraps::TABLE_LIMIT
+    return false if amount < QuickCraps::BET_UNIT
+    true
+  end
+
+  ROLL_ONE_OF = ->(*nums) { ->(roll) {Array[*nums].include?(roll.val)} }
+  WINS_ON = ROLL_ONE_OF
+  LOSES_ON = ROLL_ONE_OF
+  SEVEN_OUT = LOSES_ON[7]
+  LOSES_EASY = ->(number) { ->(roll) { roll.val == 7 || (roll.val == number && !roll.hard) } }
+  WINS_ON_HARD = ->(number) { ->(roll) { roll.val == number && roll.hard } }
+
+  PLACE = {
+     4 => new(:place_4,  WINS_ON[4],  SEVEN_OUT, 2, 1, vig: 0.05),
+     5 => new(:place_5,  WINS_ON[5],  SEVEN_OUT, 7, 5),
+     6 => new(:place_6,  WINS_ON[6],  SEVEN_OUT, 7, 6),
+     8 => new(:place_8,  WINS_ON[8],  SEVEN_OUT, 7, 6),
+     9 => new(:place_9,  WINS_ON[9],  SEVEN_OUT, 7, 5),
+    10 => new(:place_10, WINS_ON[10], SEVEN_OUT, 2, 1, vig: 0.05),
+  }
+  PASS_LINE = new(:pass_line, WINS_ON[[7,11]], LOSES_ON[2,3,12], 1, 1)
+  PASS_POINT = {
+     4 => new(:pass_4,  WINS_ON[4],  SEVEN_OUT, 1, 1),
+     5 => new(:pass_5,  WINS_ON[5],  SEVEN_OUT, 1, 1),
+     6 => new(:pass_6,  WINS_ON[6],  SEVEN_OUT, 1, 1),
+     8 => new(:pass_8,  WINS_ON[8],  SEVEN_OUT, 1, 1),
+     9 => new(:pass_9,  WINS_ON[9],  SEVEN_OUT, 1, 1),
+    10 => new(:pass_10, WINS_ON[10], SEVEN_OUT, 1, 1)
+  }
+  PASS_ODDS = {
+     4 => new(:pass_odds_4,  WINS_ON[4],  SEVEN_OUT, 2, 1, max_odds: 3),
+     5 => new(:pass_odds_5,  WINS_ON[5],  SEVEN_OUT, 3, 2, max_odds: 4),
+     6 => new(:pass_odds_6,  WINS_ON[6],  SEVEN_OUT, 6, 5, max_odds: 5),
+     8 => new(:pass_odds_8,  WINS_ON[8],  SEVEN_OUT, 6, 5, max_odds: 5),
+     9 => new(:pass_odds_9,  WINS_ON[9],  SEVEN_OUT, 3, 2, max_odds: 4),
+    10 => new(:pass_odds_10, WINS_ON[10], SEVEN_OUT, 2, 1, max_odds: 3)
+  }
+  HARDWAYS = {
+     4 => new(:hard_4,  WINS_ON_HARD[4],  LOSES_EASY[4], 7, 1),
+     6 => new(:hard_6,  WINS_ON_HARD[6],  LOSES_EASY[6], 7, 1),
+     8 => new(:hard_8,  WINS_ON_HARD[8],  LOSES_EASY[8], 9, 1),
+    10 => new(:hard_10, WINS_ON_HARD[10], LOSES_EASY[10], 9, 1)
+  }
+
+  def to_s
+    name.to_s
+  end
+
+  def inspect
+    to_s
+  end
+end
+
+
+class Bet
+  attr_reader :player_turn, :bet_box, :amount, :rail, :press_strategy, :hit_count
+
+  def initialize(player_turn, bet_box, amount, press_strategy: nil)
+    @player_turn = player_turn
+    @bet_box = bet_box
+    @hit_count = 0
+    @press_strategy = press_strategy
+
+    # the amount continues to accumulate presses on top of the original bet
+    @amount = amount
+
+    # the rail reflects what the player has invested in this bet in the current
+    # PlayerTurn,  And if positive, what profit he's secured if and when the bet should
+    # lose.  If a player can take down the bet, the rail will increase as the @amount decreases.
+    @rail = -amount
+    validate!
+  end
+
+  def evaluate(player_roll)
+    adjustment = bet_box.evaluate(player_roll, amount)
+
+    if adjustment > 0
+      @hit_count += 1
+      press_amount = press_strategy ? press_strategy[bet_box, hit_count, amount, adjustment] : 0
+
+      if (press_amount < 0)
+        # press_strategy wants us to remove money from the current bet amount
+        take_down(press_amount)
+      else
+        press_bet(adjustment, press_amount)
+      end
+    else
+      # adjustment is 0 (bet stays the same), or -@amount (bet loses)
+      @amount += adjustment
+    end
+  end
+
+  def press_bet(adjustment, press_amount)
+    @amount += press_amount
+    @rail += (adjustment - press_amount)
+  end
+
+  def take_down(take_down_amount=@amount)
+    @rail += take_down_amount
+    @amount -= take_down_amount
+  end
+
+  def validate!
+    raise "Invalid bet amount #{amount} for #{bet_box}" unless bet_box.valid?(amount)
+  end
+end
+
+
+class TableState
   OFF = 0
   ON = 1
+
+  attr_reader :point, :current_state
+
+  def initialize
+    set_off
+  end
+
+  def on?
+    current_state == ON
+  end
+
+  def off?
+    current_state == OFF
+  end
+
+  def set_off
+    @current_state = OFF
+    @point = nil
+  end
+
+  def set_on(point)
+    @current_state = ON
+    @point = point
+  end
+end
+
+
+class Round
   WINNERS=[7,11]
   POINTS=[4,5,6,8,9,10]
   CRAPS=[2,3,12]
 
-  attr_reader :point, :player_turn, :state
+  attr_reader :player_turn, :table_state
 
   def initialize(player_turn)
     @player_turn = player_turn
-    set_table_off
+    @table_state = TableState.new
   end
 
   def play!
@@ -84,31 +256,32 @@ class Round
   end
 
   def player_roll
+    player_turn.make_bets(table_state)
+
     roll = player_turn.roll
 
     keep_rolling = true
 
-    case state
-    when OFF
+    if table_state.off?
       case roll.val
       when *WINNERS
         roll.winner
       when *POINTS
-        set_table_on(roll.val)
+        table_state.set_on(roll.val)
         roll.point_established
       when *CRAPS
         roll.craps
       end
-    when ON
+    elsif table_state.on?
       case roll.val
       when 7
         roll.seven_out
-        set_table_off
+        table_state.set_off
         keep_rolling = false
       when *POINTS
-        if roll.val == point
+        if roll.val == table_state.point
           roll.point_winner
-          set_table_off
+          table_state.set_off
         else
           roll.place_winner
         end
@@ -117,21 +290,11 @@ class Round
       end
     end
 
+    player_turn.pay_bets(roll)
+
     player_turn.keep_stats(roll)
 
     keep_rolling
-  end
-
-  def set_table_on(val)
-    @point = val
-    @state = ON
-    self
-  end
-
-  def set_table_off
-    @point = nil
-    @state = OFF
-    self
   end
 end
 
@@ -244,24 +407,15 @@ class PlayerTurnStatsKeeper
 end
 
 
-class PlayerTurnBetMaker
-  attr_reader :player_turn, :pass, :pass_odds, :place, :hard_ways
-
-  def initialize(player_turn)
-    @player_turn = player_turn
-  end
-end
-
-
 class PlayerTurn
-  attr_reader :dice, :player, :rolls, :stats_keeper
+  attr_reader :dice, :player, :rolls, :stats_keeper, :bets
 
   def initialize(player, dice)
     @dice = dice
     @player = player
     @rolls = []
+    @bets = []
     @stats_keeper = PlayerTurnStatsKeeper.new
-    @bet_maker = PlayerTurnBetMaker.new(self)
   end
 
   def roll
@@ -278,19 +432,55 @@ class PlayerTurn
   def stats
     stats_keeper.to_hash
   end
+
+  def make_bets(table_state)
+    has_pass_line = has_bet?(BetBox::PASS_LINE)
+    if table_state.off?
+      bets << Bet.new(self, BetBox::PASS_LINE, QuickCraps::BET_UNIT) unless has_pass_line
+    elsif has_pass_line
+      remove_bet(BetBox::PASS_LINE)
+      bets << Bet.new(self, BetBox::PASS_POINT[table_state.point], QuickCraps::BET_UNIT)
+      bets << Bet.new(self, BetBox::PASS_ODDS[table_state.point], QuickCraps::BET_UNIT)
+    end
+  end
+
+  def pay_bets(roll)
+    bets.each do |bet|
+      bet.evaluate(roll)
+    end
+
+    self
+  end
+
+  def remove_bet(bet_box)
+    bet = find_bet(BetBox::PASS_LINE)
+    bet.take_down
+    bets.delete_if {|b| b == bet }
+    self
+  end
+
+  def has_bet?(bet_box)
+    !find_bet(bet_box).nil?
+  end
+
+  def find_bet(bet_box)
+    bets.find {|b| b.bet_box == bet_box}
+  end
 end
 
 
 class PlayerStats
   def initialize(player)
     @player = player
+    @roll_lengths = Hash.new(0)
   end
 
   def to_hash
     {
       name:                   @player.name,
+      roll_lengths:           all_roll_stats,
       longest_roll:           longest_roll_stats,
-      avg_rolls_before_7_out: @player.turns.sum {|t| t.stats[:outcomes][:total_rolls]} / @player.turns.length
+      avg_rolls_before_7_out: @player.turns.sum {|t| t.stats[:outcomes][:total_rolls]} / @player.turns.length,
     }
   end
 
@@ -300,6 +490,11 @@ class PlayerStats
       rolls: longest_turn.rolls.inspect,
       stats: longest_turn.stats
     }
+  end
+
+  def all_roll_stats
+    @player.turns.each {|t| @roll_lengths[t.stats[:outcomes][:total_rolls]] += 1 }
+    @roll_lengths.sort_by {|k,v| k}.to_h
   end
 end
 
