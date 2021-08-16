@@ -72,7 +72,7 @@ end
 
 
 class BetBox
-  attr_reader :name, :wins_on, :loses_on, :pays, :for_every, :vig
+  attr_reader :name, :wins_on, :loses_on, :pays, :for_every, :vig, :max_odds
 
   def initialize(name, wins_on, loses_on, pays, for_every, vig: 0, max_odds: nil)
     @name = name 
@@ -188,9 +188,9 @@ class Bet
         press_bet(adjustment, press_amount)
       end
     else
-      # adjustment is 0 (bet stays the same), or -@amount (bet loses)
       @amount += adjustment
     end
+    adjustment
   end
 
   def press_bet(adjustment, press_amount)
@@ -439,14 +439,31 @@ class PlayerTurn
       bets << Bet.new(self, BetBox::PASS_LINE, QuickCraps::BET_UNIT) unless has_pass_line
     elsif has_pass_line
       remove_bet(BetBox::PASS_LINE)
+      pass_odds = BetBox::PASS_ODDS[table_state.point]
       bets << Bet.new(self, BetBox::PASS_POINT[table_state.point], QuickCraps::BET_UNIT)
-      bets << Bet.new(self, BetBox::PASS_ODDS[table_state.point], QuickCraps::BET_UNIT)
+      bets << Bet.new(self, pass_odds, QuickCraps::BET_UNIT * pass_odds.max_odds)
+
+      make_initial_place_bets(table_state)
+    end
+  end
+
+  def make_initial_place_bets(table_state)
+    [5,6,8,9].select {|n| n != table_state.point}.each do |place_number|
+      bets << Bet.new(self, BetBox::PLACE[place_number], QuickCraps::BET_UNIT)
     end
   end
 
   def pay_bets(roll)
+    losers = []
     bets.each do |bet|
-      bet.evaluate(roll)
+      adjustment = bet.evaluate(roll)
+      if adjustment < 0
+        losers << bet
+      end
+    end
+
+    losers.each do |bet|
+      remove_bet(bet.bet_box)
     end
 
     self
@@ -454,7 +471,6 @@ class PlayerTurn
 
   def remove_bet(bet_box)
     bet = find_bet(BetBox::PASS_LINE)
-    bet.take_down
     bets.delete_if {|b| b == bet }
     self
   end
