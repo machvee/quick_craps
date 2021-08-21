@@ -129,7 +129,7 @@ module QuickCraps
   end
 
 
-  class BetBox
+  class CrapsBet
     # static bet definition
     attr_reader :name, :wins_on, :loses_on, :payers, :for_every, :vig, :max_odds
 
@@ -268,10 +268,10 @@ module QuickCraps
 
 
   class Bet
-    attr_reader :player_turn, :bet_box, :press_strategy, :stats
+    attr_reader :player_turn, :craps_bet, :press_strategy, :stats
 
-    def initialize(player_turn, bet_box, amount, press_strategy: nil)
-      @bet_box = bet_box
+    def initialize(player_turn, craps_bet, amount, press_strategy: nil)
+      @craps_bet = craps_bet
       @player_turn = player_turn
       @press_strategy = press_strategy
 
@@ -283,7 +283,7 @@ module QuickCraps
     def evaluate(player_roll)
       stats.roll
 
-      result_amount = bet_box.evaluate(player_roll, stats.bet_amount)
+      result_amount = craps_bet.evaluate(player_roll, stats.bet_amount)
 
       if result_amount > 0
         press_amount = press_strategy ? press_strategy[stats, result_amount] : 0
@@ -299,7 +299,7 @@ module QuickCraps
     end
 
     def validate!(amount)
-      raise "Invalid bet amount #{amount} for #{bet_box}" unless bet_box.valid?(amount)
+      raise "Invalid bet amount #{amount} for #{craps_bet}" unless craps_bet.valid?(amount)
     end
   end
 
@@ -530,13 +530,13 @@ module QuickCraps
     end
 
     def make_bets(table_state)
-      has_pass_line = has_bet?(BetBox::PASS_LINE)
+      has_pass_line = has_bet?(CrapsBet::PASS_LINE)
       if table_state.off?
-        bets << Bet.new(self, BetBox::PASS_LINE, Game::BET_UNIT) unless has_pass_line
+        bets << Bet.new(self, CrapsBet::PASS_LINE, Game::BET_UNIT) unless has_pass_line
       elsif has_pass_line
-        remove_bet(BetBox::PASS_LINE)
-        pass_odds = BetBox::PASS_ODDS[table_state.point]
-        bets << Bet.new(self, BetBox::PASS_POINT[table_state.point], Game::BET_UNIT)
+        remove_bet(CrapsBet::PASS_LINE)
+        pass_odds = CrapsBet::PASS_ODDS[table_state.point]
+        bets << Bet.new(self, CrapsBet::PASS_POINT[table_state.point], Game::BET_UNIT)
         bets << Bet.new(self, pass_odds, Game::BET_UNIT * pass_odds.max_odds)
 
         make_initial_place_bets(table_state)
@@ -545,7 +545,7 @@ module QuickCraps
 
     def make_initial_place_bets(table_state)
       [5,6,8,9].select {|n| n != table_state.point}.each do |place_number|
-        bets << Bet.new(self, BetBox::PLACE[place_number], Game::BET_UNIT)
+        bets << Bet.new(self, CrapsBet::PLACE[place_number], Game::BET_UNIT)
       end
     end
 
@@ -559,24 +559,24 @@ module QuickCraps
       end
 
       losers.each do |bet|
-        remove_bet(bet.bet_box)
+        remove_bet(bet.craps_bet)
       end
 
       self
     end
 
-    def remove_bet(bet_box)
-      bet = find_bet(BetBox::PASS_LINE)
+    def remove_bet(craps_bet)
+      bet = find_bet(CrapsBet::PASS_LINE)
       bets.delete_if {|b| b == bet }
       self
     end
 
-    def has_bet?(bet_box)
-      !find_bet(bet_box).nil?
+    def has_bet?(craps_bet)
+      !find_bet(craps_bet).nil?
     end
 
-    def find_bet(bet_box)
-      bets.find {|b| b.bet_box == bet_box}
+    def find_bet(craps_bet)
+      bets.find {|b| b.craps_bet == craps_bet}
     end
   end
 
