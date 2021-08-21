@@ -100,7 +100,7 @@ module QuickCraps
   end
 
 
-  class Payer
+  class Odds
     attr_reader :pays, :for_every, :vig
 
     def initialize(pays, for_every, vig: 0)
@@ -114,6 +114,18 @@ module QuickCraps
       vig_amt = vig > 0 ? (amt * vig).floor : 0
       win_amt - vig_amt
     end
+
+    PAYS_EVEN = new(1, 1)
+    PAYS_2_1  = new(2, 1)
+    PAYS_DOUBLE = PAYS_2_1
+    PAYS_6_5 = new(6, 5)
+    PAYS_7_6 = new(7, 6)
+    PAYS_7_5 = new(7, 5)
+    PAYS_3_2 = new(3, 2)
+    PAYS_6_5 = new(6, 4)
+    PAYS_TRIPLE = new(3, 1)
+    PAYS_7_1 = new(7, 1)
+    PAYS_9_1 = new(9, 1)
   end
 
 
@@ -157,51 +169,39 @@ module QuickCraps
     LOSES_EASY = ->(number) { ->(roll) { roll.val == 7 || !roll.hard(number) } }
     WINS_ON_HARD = ->(number) { ->(roll) { roll.hard(number) } }
 
-    PAYS_EVEN = Payer.new(1, 1)
-    PAYS_2_1 = Payer.new(2, 1)
-    PAYS_DOUBLE = PAYS_2_1
-    PAYS_6_5 = Payer.new(6, 5)
-    PAYS_7_6 = Payer.new(7, 6)
-    PAYS_7_5 = Payer.new(7, 5)
-    PAYS_3_2 = Payer.new(3, 2)
-    PAYS_6_5 = Payer.new(6, 4)
-    PAYS_TRIPLE = Payer.new(3, 1)
-    PAYS_7_1 = Payer.new(7, 1)
-    PAYS_9_1 = Payer.new(9, 1)
-
     PLACE = {
-       4 => new(Bets::PLACE_4,  WINS_ON[4],  SEVEN_OUT, PAYS_2_1, vig: 0.05),
-       5 => new(Bets::PLACE_5,  WINS_ON[5],  SEVEN_OUT, PAYS_7_5),
-       6 => new(Bets::PLACE_6,  WINS_ON[6],  SEVEN_OUT, PAYS_7_6),
-       8 => new(Bets::PLACE_8,  WINS_ON[8],  SEVEN_OUT, PAYS_7_6),
-       9 => new(Bets::PLACE_9,  WINS_ON[9],  SEVEN_OUT, PAYS_7_5),
-      10 => new(Bets::PLACE_10, WINS_ON[10], SEVEN_OUT, PAYS_2_1, vig: 0.05),
+       4 => new(Bets::PLACE_4,  WINS_ON[4],  SEVEN_OUT, Odds::PAYS_2_1, vig: 0.05),
+       5 => new(Bets::PLACE_5,  WINS_ON[5],  SEVEN_OUT, Odds::PAYS_7_5),
+       6 => new(Bets::PLACE_6,  WINS_ON[6],  SEVEN_OUT, Odds::PAYS_7_6),
+       8 => new(Bets::PLACE_8,  WINS_ON[8],  SEVEN_OUT, Odds::PAYS_7_6),
+       9 => new(Bets::PLACE_9,  WINS_ON[9],  SEVEN_OUT, Odds::PAYS_7_5),
+      10 => new(Bets::PLACE_10, WINS_ON[10], SEVEN_OUT, Odds::PAYS_2_1, vig: 0.05),
     }
-    PASS_LINE = new(Bets::PASS_LINE, WINS_ON[[7,11]], LOSES_ON[2,3,12], PAYS_EVEN)
+    PASS_LINE = new(Bets::PASS_LINE, WINS_ON[[7,11]], LOSES_ON[2,3,12], Odds::PAYS_EVEN)
     PASS_POINT = {
-       4 => new(Bets::PASS_4,  WINS_ON[4],  SEVEN_OUT, PAYS_EVEN),
-       5 => new(Bets::PASS_5,  WINS_ON[5],  SEVEN_OUT, PAYS_EVEN),
-       6 => new(Bets::PASS_6,  WINS_ON[6],  SEVEN_OUT, PAYS_EVEN),
-       8 => new(Bets::PASS_8,  WINS_ON[8],  SEVEN_OUT, PAYS_EVEN),
-       9 => new(Bets::PASS_9,  WINS_ON[9],  SEVEN_OUT, PAYS_EVEN),
-      10 => new(Bets::PASS_10, WINS_ON[10], SEVEN_OUT, PAYS_EVEN)
+       4 => new(Bets::PASS_4,  WINS_ON[4],  SEVEN_OUT, Odds::PAYS_EVEN),
+       5 => new(Bets::PASS_5,  WINS_ON[5],  SEVEN_OUT, Odds::PAYS_EVEN),
+       6 => new(Bets::PASS_6,  WINS_ON[6],  SEVEN_OUT, Odds::PAYS_EVEN),
+       8 => new(Bets::PASS_8,  WINS_ON[8],  SEVEN_OUT, Odds::PAYS_EVEN),
+       9 => new(Bets::PASS_9,  WINS_ON[9],  SEVEN_OUT, Odds::PAYS_EVEN),
+      10 => new(Bets::PASS_10, WINS_ON[10], SEVEN_OUT, Odds::PAYS_EVEN)
     }
     PASS_ODDS = {
-       4 => new(Bets::PASS_ODDS_4,  WINS_ON[4],  SEVEN_OUT, PAYS_2_1, max_odds: 3),
-       5 => new(Bets::PASS_ODDS_5,  WINS_ON[5],  SEVEN_OUT, PAYS_3_2, max_odds: 4),
-       6 => new(Bets::PASS_ODDS_6,  WINS_ON[6],  SEVEN_OUT, PAYS_6_5, max_odds: 5),
-       8 => new(Bets::PASS_ODDS_8,  WINS_ON[8],  SEVEN_OUT, PAYS_6_5, max_odds: 5),
-       9 => new(Bets::PASS_ODDS_9,  WINS_ON[9],  SEVEN_OUT, PAYS_3_2, max_odds: 4),
-      10 => new(Bets::PASS_ODDS_10, WINS_ON[10], SEVEN_OUT, PAYS_2_1, max_odds: 3)
+       4 => new(Bets::PASS_ODDS_4,  WINS_ON[4],  SEVEN_OUT, Odds::PAYS_2_1, max_odds: 3),
+       5 => new(Bets::PASS_ODDS_5,  WINS_ON[5],  SEVEN_OUT, Odds::PAYS_3_2, max_odds: 4),
+       6 => new(Bets::PASS_ODDS_6,  WINS_ON[6],  SEVEN_OUT, Odds::PAYS_6_5, max_odds: 5),
+       8 => new(Bets::PASS_ODDS_8,  WINS_ON[8],  SEVEN_OUT, Odds::PAYS_6_5, max_odds: 5),
+       9 => new(Bets::PASS_ODDS_9,  WINS_ON[9],  SEVEN_OUT, Odds::PAYS_3_2, max_odds: 4),
+      10 => new(Bets::PASS_ODDS_10, WINS_ON[10], SEVEN_OUT, Odds::PAYS_2_1, max_odds: 3)
     }
     HARDWAYS = {
-       4 => new(Bets::HARD_4,  WINS_ON_HARD[4],  LOSES_EASY[4], PAYS_7_1),
-       6 => new(Bets::HARD_6,  WINS_ON_HARD[6],  LOSES_EASY[6], PAYS_7_1),
-       8 => new(Bets::HARD_8,  WINS_ON_HARD[8],  LOSES_EASY[8], PAYS_9_1),
-      10 => new(Bets::HARD_10, WINS_ON_HARD[10], LOSES_EASY[10], PAYS_9_1)
+       4 => new(Bets::HARD_4,  WINS_ON_HARD[4],  LOSES_EASY[4], Odds::PAYS_7_1),
+       6 => new(Bets::HARD_6,  WINS_ON_HARD[6],  LOSES_EASY[6], Odds::PAYS_7_1),
+       8 => new(Bets::HARD_8,  WINS_ON_HARD[8],  LOSES_EASY[8], Odds::PAYS_9_1),
+      10 => new(Bets::HARD_10, WINS_ON_HARD[10], LOSES_EASY[10], Odds::PAYS_9_1)
     }
 
-    HARD_PAYS = Hash.new(PAYS_EVEN).merge(2 => PAYS_DOUBLE, 12 => PAYS_TRIPLE)
+    HARD_PAYS = Hash.new(Odds::PAYS_EVEN).merge(2 => Odds::PAYS_DOUBLE, 12 => Odds::PAYS_TRIPLE)
 
     FIELD = new(Bets::FIELD, WINS_ON[*2..4, *9..12], LOSES_ON[*5..8], HARD_PAYS)
 
