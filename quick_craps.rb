@@ -220,7 +220,7 @@ module QuickCraps
       @bet_amount = 0 # current amount of money on the bet
       @profit = 0
 
-      press(bet_amount)
+      press(amount)
     end
 
     def on?
