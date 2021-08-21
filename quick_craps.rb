@@ -89,6 +89,7 @@ module QuickCraps
 
     PAYS_EVEN = new(1, 1)
     PAYS_2_1  = new(2, 1)
+    PAYS_2_1_VIG_05  = new(2, 1, vig: 0.05)
     PAYS_DOUBLE = PAYS_2_1
     PAYS_6_5 = new(6, 5)
     PAYS_7_6 = new(7, 6)
@@ -126,9 +127,9 @@ module QuickCraps
     HARD_10 = :hard_10
     FIELD_BET = :field
 
-    attr_reader :name, :wins_on, :loses_on, :payers, :for_every, :vig, :max_odds
+    attr_reader :name, :wins_on, :loses_on, :payers, :for_every, :max_odds
 
-    def initialize(name, wins_on, loses_on, payers, vig: 0, max_odds: nil)
+    def initialize(name, wins_on, loses_on, payers, max_odds: nil)
       @name = name 
       @wins_on = wins_on
       @loses_on = loses_on
@@ -165,12 +166,12 @@ module QuickCraps
     WINS_ON_HARD = ->(number) { ->(roll) { roll.hard(number) } }
 
     PLACE = {
-       4 => new(PLACE_4,  WINS_ON[4],  SEVEN_OUT, Odds::PAYS_2_1, vig: 0.05),
+       4 => new(PLACE_4,  WINS_ON[4],  SEVEN_OUT, Odds::PAYS_2_1_VIG_05),
        5 => new(PLACE_5,  WINS_ON[5],  SEVEN_OUT, Odds::PAYS_7_5),
        6 => new(PLACE_6,  WINS_ON[6],  SEVEN_OUT, Odds::PAYS_7_6),
        8 => new(PLACE_8,  WINS_ON[8],  SEVEN_OUT, Odds::PAYS_7_6),
        9 => new(PLACE_9,  WINS_ON[9],  SEVEN_OUT, Odds::PAYS_7_5),
-      10 => new(PLACE_10, WINS_ON[10], SEVEN_OUT, Odds::PAYS_2_1, vig: 0.05),
+      10 => new(PLACE_10, WINS_ON[10], SEVEN_OUT, Odds::PAYS_2_1_VIG_05),
     }
     PASS_LINE = new(PASS_LINE_BET, WINS_ON[[7,11]], LOSES_ON[2,3,12], Odds::PAYS_EVEN)
     PASS_POINT = {
@@ -196,9 +197,9 @@ module QuickCraps
       10 => new(HARD_10, WINS_ON_HARD[10], LOSES_EASY[10], Odds::PAYS_9_1)
     }
 
-    HARD_PAYS = Hash.new(Odds::PAYS_EVEN).merge(2 => Odds::PAYS_DOUBLE, 12 => Odds::PAYS_TRIPLE)
+    FIELD_ODDS = Hash.new(Odds::PAYS_EVEN).merge(2 => Odds::PAYS_DOUBLE, 12 => Odds::PAYS_TRIPLE)
 
-    FIELD = new(FIELD_BET, WINS_ON[*2..4, *9..12], LOSES_ON[*5..8], HARD_PAYS)
+    FIELD = new(FIELD_BET, WINS_ON[*2..4, *9..12], LOSES_ON[*5..8], FIELD_ODDS)
 
     def to_s
       name.to_s
