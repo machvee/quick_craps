@@ -6,19 +6,23 @@
 #
 module QuickCraps
   class Game
-    DEFAULT_NUM_PLAYERS = 6
-    DEFAULT_NUM_SHOOTERS = DEFAULT_NUM_PLAYERS * 1000
+    SECONDS_PER_HOUR = 60*60
+    NUM_PLAYERS = 6
+    SECONDS_PER_ROLL = 60
+    ROLLS_PER_HOUR = SECONDS_PER_HOUR/SECONDS_PER_ROLL
+    HOURS_OF_PLAY = 4
+    NUM_ROUNDS = NUM_PLAYERS * (HOURS_OF_PLAY * ROLLS_PER_HOUR)
     BET_UNIT=25
     TABLE_LIMIT=5000
     PLACE_DOUBLE_EVERY_OTHER_HIT = ->(stats, winnings) { stats.num_wins.even? ? stats.amount : 0 }
 
-    attr_reader :players, :dice, :num_shooters, :shooter
+    attr_reader :players, :dice, :total_rounds, :shooter
 
-    def initialize(num_players: DEFAULT_NUM_PLAYERS, num_shooters: DEFAULT_NUM_SHOOTERS)
+    def initialize(num_players: NUM_PLAYERS, total_rounds: NUM_ROUNDS)
       @players = create_players(num_players)
       @dice = Dice.new
       @next_player = 0
-      @num_shooters = num_shooters
+      @total_rounds = total_rounds
       @shooter = nil
     end
 
@@ -34,7 +38,7 @@ module QuickCraps
     end
 
     def run
-      num_shooters.times do
+      total_rounds.times do
         next_player_turn
       end
     end
