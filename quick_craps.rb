@@ -228,16 +228,12 @@ module QuickCraps
     #   :down - player took the bet off the table, but it retains stats
     #   :won - player won the bet.
     #   :lost - player lost the bet.
-    attr_reader :profit, :count, :num_wins, :bet_amount, :state
+    attr_reader :profit, :bet_amount, :state
 
     def initialize(amount)
-      @count = 0 # number of rolls this bet had current_amount > 0
-      @num_wins = 0 # number of times this bet won during a player turn
-      @bet_amount = 0 # current amount of money on the bet
-      @profit = 0
       @state = :on
-
-      press(amount)
+      @bet_amount = amount
+      @profit = -amount
     end
 
     def on?
@@ -262,50 +258,25 @@ module QuickCraps
 
     def down!
       @state = :down
-    end
-
-    def press(amount)
-      # pos or neg amounts ok
-      must_be_on!
-      @bet_amount += amount
-      @profit -= amount
-      down! if bet_amount == 0
-    end
-    
-    def roll
-      @count += 1 if on?
-    end
-
-    def payout(amount_won, parlay_amount = 0)
-      must_be_on!
-      @num_wins += 1
-      @profit += (amount_won - parlay_amount)
-      @bet_amount += parlay_amount
+      @profit += bet_amount
     end
 
     def lost!
-      # preserve the last bet_amount to know the amount on the table
-      must_be_on!
       @state = :lost
     end
 
-    def won!
+    def won!(amount_won)
       @state = :won
-    end
-
-    def must_be_on!
-      raise "bet is not ON" unless on?
+      @profit += bet_amount + amount_won
     end
   end
 
 
   class PlayerBet
-    attr_reader :player_turn, :craps_bet, :press_strategy, :state
+    attr_reader :bet, :state
 
-    def initialize(player_turn, craps_bet, amount, press_strategy: nil)
-      @craps_bet = craps_bet
-      @player_turn = player_turn
-      @press_strategy = press_strategy
+    def initialize(bet, amount)
+      @bet = bet
 
       validate!(amount)
 
@@ -313,77 +284,62 @@ module QuickCraps
     end
 
     def evaluate(player_roll)
-      state.roll
+      return 0 if state.off?
 
-      result_amount = craps_bet.evaluate(player_roll, state.bet_amount)
+      bet_outcome_amount = bet.evaluate(player_roll, state.bet_amount)
 
-      if result_amount > 0
-        press_amount = press_strategy ? press_strategy[state, result_amount] : 0
-        state.payout(result_amount, press_amount)
-        state.won! if craps_bet.prop?
-      elsif result_amount < 0
-        state.lost
+      if bet_outcome_amount > 0
+        state.won!(bet_outcome_amount)
+      elsif bet_outcome_amount < 0
+        state.lost!
       end
-      result_amount
+      bet_outcome_amount
     end
 
-    def ensure_bet_amount(amount)
-      return if amount == bet_amount
-
-      state.press(amount - bet_amount)
+    def active?
+      state.active?
     end
 
     def take_down
-      ensure_bet_amount(0)
+      state.down!
     end
 
     def validate!(amount)
-      raise "Invalid bet amount #{amount} for #{craps_bet}" unless craps_bet.valid?(amount)
+      raise "Invalid bet amount #{amount} for #{bet}" unless bet.valid?(amount)
     end
   end
 
 
   class PlayerBets
-    attr_reader :player_turn, :player_bets
+    attr_reader :player_bets
 
-    def initialize(player_turn)
-      @player_turn = player_turn
+    def initialize
       @player_bets = Hash.new {|h,k| h[k] = []}
     end
 
-    def ensure_bet(craps_bet, ensure_amount, press_strategy: DOUBLE_EVERY_OTHER_HIT)
-      #
-      # No action is take in the craps_bet exists at the given ensure_amount in the active state.
-      # "On" bets that exist with a differing bet_amount are adjusted up or down to ensure_amount,
-      # possibly taken down. Otherwise a new :on bet is created if the ensure_amount > 0
-      #
-      # At the end of the roll (7out), all bets should be in the :won, :lost, :off, or :down
-      # states, and statistics can be derived from them
-      #
-      existing_active_bet = active_bet(craps_bet)
+    def each_active_bet
+      player_bets.each do |name, bet_array|
+        last_bet = bet_array.last
+        next if last_bet.nil? || !last_bet.active?
 
-      if existing_active_bet &&
-        if existing_active_bet.state.on?
-          # the bet amount will be adjusted to equal the ensure_amount, possibly
-          # taken down if ensure_amount is 0
-          existing_active_bet.ensure_bet_amount(ensure_amount)
-        end
-      elsif ensure_amount > 0
-        create_bet(craps_bet, ensure_amount, press_strategy: press_strategy)
+        yield last_bet
       end
+    end
+
+    def ensure_bet(bet, amount)
+      create_bet(bet, amount) if !active_bet(bet)
     end
 
     def ensure_pass_line(amount)
       ensure_bet(Bet::PASS_LINE, amount)
     end
 
-    def ensure_pass_line_and_odds_on_point(point, odds_amount)
+    def ensure_pass_line_and_odds_on_point(point, pass_line_amount, odds_amount)
       pass_line = active_bet(Bet::PASS_LINE)
       pass_point = active_bet(Bet::PASS_POINT[point])
 
       return if pass_line.nil? && pass_point.nil?
 
-      pass_line_amount = pass_line.nil? ? 0 : pass_line.bet_amount
       pass_line.take_down unless pass_line.nil?
 
       ensure_bet(Bet::PASS_POINT[point], pass_line_amount)
@@ -392,14 +348,14 @@ module QuickCraps
 
     private
 
-    def create_bet(craps_bet, amount, press_strategy:)
-      PlayerBet.new(player_turn, craps_bet, amount, press_strategy: press_strategy).tap do |bet|
-        bets[craps_bet.name].unshift(bet)
+    def create_bet(bet, amount)
+      PlayerBet.new(bet, amount).tap do |player_bet|
+        player_bets[bet.name].push(player_bet)
       end
     end
 
-    def active_bet(craps_bet)
-      candidate = bets[craps_bet.name][0]
+    def active_bet(bet)
+      candidate = player_bets[bet.name].last
       candidate && candidate.state.active? ? candidate : nil
     end
   end
@@ -605,13 +561,13 @@ module QuickCraps
 
 
   class PlayerTurn
-    attr_reader :dice, :player, :rolls, :stats_keeper, :bets
+    attr_reader :dice, :player, :rolls, :stats_keeper, :player_bets
 
     def initialize(player, dice)
       @dice = dice
       @player = player
       @rolls = []
-      @bets = PlayerBets.new(self)
+      @player_bets = PlayerBets.new
       @stats_keeper = PlayerTurnStatsKeeper.new
     end
 
@@ -636,7 +592,8 @@ module QuickCraps
       else
         player_bets.ensure_pass_line_and_odds_on_point(
           table_state.point,
-          Game::BET_UNIT * Bets::PASS_ODDS[table_state.point].max_odds
+          Game::BET_UNIT,
+          Game::BET_UNIT * Bet::PASS_ODDS[table_state.point].max_odds
         )
         ensure_place_bets(table_state)
       end
@@ -644,27 +601,14 @@ module QuickCraps
 
     def ensure_place_bets(table_state)
       [5,6,8,9].select {|n| n != table_state.point}.each do |place_number|
-        player_bets.ensure_bet(
-          Bet::PLACE[place_number],
-          Game::BET_UNIT,
-          press_strategy: DOUBLE_EVERY_OTHER_HIT
-        )
+        player_bets.ensure_bet(Bet::PLACE[place_number], Game::BET_UNIT)
       end
     end
 
     def pay_bets(roll)
-      losers = []
-      bets.each do |bet|
-        adjustment = bet.evaluate(roll)
-        if adjustment < 0
-          losers << bet
-        end
+      player_bets.each_active_bet do |active_bet|
+        active_bet.evaluate(roll)
       end
-
-      losers.each do |bet|
-        bets.lost(bet.craps_bet)
-      end
-
       self
     end
 
