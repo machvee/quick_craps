@@ -10,7 +10,7 @@ module QuickCraps
     NUM_PLAYERS = 6
     SECONDS_PER_ROLL = 60
     ROLLS_PER_HOUR = SECONDS_PER_HOUR/SECONDS_PER_ROLL
-    HOURS_OF_PLAY = 4
+    HOURS_OF_PLAY = 8
     NUM_ROUNDS = NUM_PLAYERS * (HOURS_OF_PLAY * ROLLS_PER_HOUR)
     BET_UNIT=25
     TABLE_LIMIT=5000
@@ -45,6 +45,8 @@ module QuickCraps
 
     def stats
       {
+        hours_of_play: HOURS_OF_PLAY,
+        total_rounds: NUM_ROUNDS,
         players: players.map(&:stats),
         dice: dice.stats
       }
@@ -306,6 +308,15 @@ module QuickCraps
 
     def validate!(amount)
       raise "Invalid bet amount #{amount} for #{bet}" unless bet.valid?(amount)
+    end
+
+    def stats
+      {
+        name: bet.name,
+        state: state.state,
+        bet_amount: bet_amount,
+        profit: profit
+      }
     end
   end
 
@@ -611,7 +622,6 @@ module QuickCraps
       end
       self
     end
-
   end
 
 
