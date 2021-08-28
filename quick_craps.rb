@@ -20,7 +20,7 @@ module QuickCraps
 
     attr_reader :players, :dice, :total_turns, :shooter
 
-    def initialize(num_players: DFLT_NUM_PLAYERS, hours_of_play: DFLT_HOURS_OF_PLAY, seed: nil)
+    def initialize(num_players: DFLT_NUM_PLAYERS, hours_of_play: DFLT_HOURS_OF_PLAY, seed: Random.new_seed)
       @players = create_players(num_players)
       @next_player = 0
       @hours_of_play = hours_of_play
@@ -715,10 +715,10 @@ module QuickCraps
 
     BIG_NUM = 2**128
 
-    def initialize(num_dies=2, seed: nil)
-      srand(seed) unless seed.nil?
+    def initialize(num_dies=2, seed:)
+      main_prng = Random.new(seed)
       @dies = num_dies.times.each_with_object([]) do |n, o|
-        die_prng = Random.new(rand(BIG_NUM))
+        die_prng = Random.new(main_prng.rand(BIG_NUM))
         o << Die.new(prng: die_prng)
       end
       @freqs = Array.new(max_sum + 1)
