@@ -695,21 +695,13 @@ module QuickCraps
 
     attr_reader :val
 
-    def initialize(set_to=nil)
-      if set_to
-        set(set_to)
-      else
-        roll
-      end
-    end
-
-    def set(val)
-      raise "set must be in #{RANGE}" unless RANGE.include?(set)
-      @val = set
+    def initialize(prng: Random.new)
+      @prng = prng
+      roll
     end
 
     def roll
-      @val = rand(RANGE)
+      @val = @prng.rand(RANGE)
     end
 
     def inspect
@@ -721,9 +713,14 @@ module QuickCraps
   class Dice
     attr_reader :val, :total_rolls
 
+    BIG_NUM = 2**128
+
     def initialize(num_dies=2, seed: nil)
       srand(seed) unless seed.nil?
-      @dies = num_dies.times.each_with_object([]) {|n, o| o << Die.new}
+      @dies = num_dies.times.each_with_object([]) do |n, o|
+        die_prng = Random.new(rand(BIG_NUM))
+        o << Die.new(prng: die_prng)
+      end
       @freqs = Array.new(max_sum + 1)
       reset
     end
