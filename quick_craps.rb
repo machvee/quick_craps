@@ -236,12 +236,16 @@ module QuickCraps
     #   :down - player took the bet off the table, but it retains stats
     #   :won - player won the bet.
     #   :lost - player lost the bet.
-    attr_reader :profit, :bet_amount, :state
+    #
+    #   rail_amount is the amount commited to the bet from the Players rail
+    #   
+    #
+    attr_reader :rail_amount, :bet_amount, :state
 
     def initialize(amount)
       @state = :on
       @bet_amount = amount
-      @profit = -amount
+      @rail_amount = -bet_amount
     end
 
     def on?
@@ -256,6 +260,14 @@ module QuickCraps
       on? || off?
     end
 
+    def won?
+      @state == :won
+    end
+
+    def lost?
+      @state == :lost
+    end
+
     def off!
       @state = :off
     end
@@ -265,17 +277,20 @@ module QuickCraps
     end
 
     def down!
+      # terminates the bet
       @state = :down
-      @profit += bet_amount
+      @rail_amount = bet_amount
     end
 
     def lost!
+      # terminates the bet
       @state = :lost
     end
 
     def won!(amount_won)
+      # terminates the bet
       @state = :won
-      @profit += bet_amount + amount_won
+      @rail_amount = bet_amount + amount_won
     end
   end
 
@@ -321,7 +336,7 @@ module QuickCraps
         name: bet.name,
         state: state.state,
         bet_amount: bet_amount,
-        profit: profit
+        rail_amount: rail_amount
       }
     end
   end

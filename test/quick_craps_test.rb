@@ -37,5 +37,53 @@ Oktest.scope do
       end
     end
   end
+
+  topic QuickCraps::BetState do
+    before do
+      @amount = 100
+      @win_amount = 200
+      @bs = QuickCraps::BetState.new(@amount)
+    end
+
+    spec "expected method return values" do
+      ok {@bs.on?}.truthy?
+      ok {@bs.off?}.falsy?
+      ok {@bs.bet_amount} == @amount
+      ok {@bs.rail_amount} == -@amount
+    end
+
+    topic "can be lost!" do
+      before do
+        @bs.lost!
+      end
+
+      spec "has expected rail_amount" do
+        ok {@bs.rail_amount} == -@amount
+        ok {@bs.lost?}.truthy?
+      end
+    end
+
+
+    topic "can be won!" do
+      before do
+        @bs.won!(@win_amount)
+      end
+
+      spec "has expected rail_amount" do
+        ok {@bs.rail_amount} == @amount + @win_amount
+        ok {@bs.won?}.truthy?
+      end
+    end
+
+    topic "can be set off!" do
+      before do
+        @bs.off!
+      end
+
+      spec "can be set off" do
+        ok {@bs.off?}.truthy?
+      end
+    end
+  end
 end
 
