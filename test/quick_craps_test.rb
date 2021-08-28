@@ -45,7 +45,7 @@ Oktest.scope do
       @bs = QuickCraps::BetState.new(@amount)
     end
 
-    spec "expected method return values" do
+    spec "expected initial state and amounts" do
       ok {@bs.on?}.truthy?
       ok {@bs.off?}.falsy?
       ok {@bs.bet_amount} == @amount
