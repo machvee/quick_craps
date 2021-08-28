@@ -7,23 +7,27 @@
 module QuickCraps
   class Game
     SECONDS_PER_HOUR = 60*60
-    NUM_PLAYERS = 6
     SECONDS_PER_ROLL = 60
+
+    DFLT_NUM_PLAYERS = 6
+    DFLT_HOURS_OF_PLAY = 4
+
     ROLLS_PER_HOUR = SECONDS_PER_HOUR/SECONDS_PER_ROLL
-    HOURS_OF_PLAY = 8
-    NUM_ROUNDS = NUM_PLAYERS * (HOURS_OF_PLAY * ROLLS_PER_HOUR)
+    DFLT_NUM_ROUNDS = DFLT_HOURS_OF_PLAY * ROLLS_PER_HOUR
     BET_UNIT=25
     TABLE_LIMIT=5000
     DOUBLE_EVERY_OTHER_HIT = ->(stats, winnings) { stats.num_wins.even? ? stats.amount : 0 }
 
-    attr_reader :players, :dice, :total_rounds, :shooter
+    attr_reader :players, :dice, :total_turns, :shooter
 
-    def initialize(num_players: NUM_PLAYERS, total_rounds: NUM_ROUNDS)
+    def initialize(num_players: DFLT_NUM_PLAYERS, hours_of_play: DFLT_HOURS_OF_PLAY, seed: nil)
       @players = create_players(num_players)
-      @dice = Dice.new
       @next_player = 0
-      @total_rounds = total_rounds
+      @hours_of_play = hours_of_play
+      @total_turns = @hours_of_play * ROLLS_PER_HOUR
       @shooter = nil
+      @seed = seed
+      @dice = Dice.new(seed: @seed)
     end
 
     def next_player_turn
@@ -38,18 +42,20 @@ module QuickCraps
     end
 
     def run
-      total_rounds.times do
+      total_turns.times do
         next_player_turn
       end
     end
 
     def stats
-      {
-        hours_of_play: HOURS_OF_PLAY,
-        total_rounds: NUM_ROUNDS,
-        players: players.map(&:stats),
-        dice: dice.stats
-      }
+      (@seed ? {seed: @seed} : {}).merge(
+        {
+          players: players.map(&:stats),
+          hours_of_play: @hours_of_play,
+          total_turns: total_turns,
+          dice: dice.stats
+        }
+      )
     end
 
     def inspect
@@ -345,7 +351,7 @@ module QuickCraps
       ensure_bet(Bet::PASS_LINE, amount)
     end
 
-    def ensure_pass_line_and_odds_on_point(point, pass_line_amount, odds_amount)
+    def ensure_pass_point_and_odds(point, pass_line_amount, odds_amount)
       pass_line = active_bet(Bet::PASS_LINE)
       pass_point = active_bet(Bet::PASS_POINT[point])
 
@@ -484,20 +490,24 @@ module QuickCraps
     attr_reader :val
     attr_reader :outcome
     attr_reader :dice
+    attr_reader :is_hard
 
     def initialize(dice)
       @dice = dice
       @val = nil
       @outcome = nil
+      @is_hard = false
     end
 
     def roll
       dice.roll
+      @is_hard = dice.hard?
       @val = dice.val
+      self
     end
 
     def hard(hard_total)
-      val == hard_total && dice.hard?
+      val == hard_total && is_hard
     end
 
     def point_established
@@ -529,7 +539,7 @@ module QuickCraps
     end
 
     def to_s
-      format("%d%s%s", val, dice.hard? ? "h" : "", OUTCOME_SYMBOLS[outcome])
+      format("%d%s%s", val, is_hard ? "h" : "", OUTCOME_SYMBOLS[outcome])
     end
 
     def inspect
@@ -584,8 +594,7 @@ module QuickCraps
 
     def roll
       PlayerRoll.new(dice).tap do |r|
-        r.roll
-        rolls << r
+        rolls << r.roll
       end
     end
 
@@ -601,7 +610,7 @@ module QuickCraps
       if table_state.off?
         player_bets.ensure_pass_line(Game::BET_UNIT)
       else
-        player_bets.ensure_pass_line_and_odds_on_point(
+        player_bets.ensure_pass_point_and_odds(
           table_state.point,
           Game::BET_UNIT,
           Game::BET_UNIT * Bet::PASS_ODDS[table_state.point].max_odds
@@ -712,7 +721,8 @@ module QuickCraps
   class Dice
     attr_reader :val, :total_rolls
 
-    def initialize(num_dies=2)
+    def initialize(num_dies=2, seed: nil)
+      srand(seed) unless seed.nil?
       @dies = num_dies.times.each_with_object([]) {|n, o| o << Die.new}
       @freqs = Array.new(max_sum + 1)
       reset
@@ -732,6 +742,11 @@ module QuickCraps
       @freqs.fill(0)
       @total_rolls = 0
       shake
+    end
+
+    def [](offset)
+      raise "invalid die number #{offset}"  unless (0...@dies.length).include?(offset)
+      @dies[offset].val
     end
 
     def stats
