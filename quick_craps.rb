@@ -693,21 +693,21 @@ module QuickCraps
     def to_hash
       {
         name:                   @player.name,
-        roll_lengths:           all_roll_stats,
+        roll_lengths:           calculated_roll_lengths,
         longest_roll:           longest_roll_stats,
-        avg_rolls_before_7_out: @player.turns.sum {|t| t.stats[:outcomes][:total_rolls]} / @player.turns.length,
+        avg_rolls_before_7_out: @player.average_rolls_before_7_out
       }
     end
 
     def longest_roll_stats
-      longest_turn = @player.turns.max_by {|t| t.stats[:outcomes][:total_rolls]}
+      longest_turn = @player.longest_turn
       {
         rolls: longest_turn.rolls.inspect,
         longest_stats: longest_turn.stats
       }
     end
 
-    def all_roll_stats
+    def calculated_roll_lengths
       @player.turns.each {|t| @roll_lengths[t.stats[:outcomes][:total_rolls]] += 1 }
       @roll_lengths.sort_by {|k,v| k}.to_h
     end
@@ -736,6 +736,14 @@ module QuickCraps
 
     def stats
       PlayerStats.new(self).to_hash
+    end
+
+    def longest_turn
+      turns.max_by {|t| t.stats[:outcomes][:total_rolls]}
+    end
+
+    def average_rolls_before_7_out
+      turns.sum {|t| t.stats[:outcomes][:total_rolls]} / turns.length
     end
 
     def inspect
