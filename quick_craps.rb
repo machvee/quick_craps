@@ -15,13 +15,14 @@ module QuickCraps
     ROLLS_PER_HOUR = SECONDS_PER_HOUR/SECONDS_PER_ROLL
     DFLT_NUM_ROUNDS = DFLT_HOURS_OF_PLAY * ROLLS_PER_HOUR
     BET_UNIT=25
+    DEFAULT_BUYIN=(40 * BET_UNIT)
     TABLE_LIMIT=5000
     DOUBLE_EVERY_OTHER_HIT = ->(stats, winnings) { stats.num_wins.even? ? stats.amount : 0 }
 
     attr_reader :players, :dice, :total_turns, :shooter
 
     def initialize(num_players: DFLT_NUM_PLAYERS, hours_of_play: DFLT_HOURS_OF_PLAY, seed: Random.new_seed)
-      @players = create_players(num_players)
+      @players = create_players(num_players, buyin: DEFAULT_BUYIN)
       @next_player = 0
       @hours_of_play = hours_of_play
       @total_turns = @hours_of_play * ROLLS_PER_HOUR
@@ -63,9 +64,9 @@ module QuickCraps
 
     private
 
-    def create_players(num_players)
+    def create_players(num_players, buyin:)
       num_players.times.each_with_object([]) do |n, p|
-        p << Player.new(name: "Player#{n+1}")
+        p << Player.new(name: "Player#{n+1}", buyin: buyin)
       end
     end
 
@@ -96,6 +97,12 @@ module QuickCraps
       win_amt = (bet_amount / for_every ) * pays
       vig_amt = vig > 0 ? (amt * vig).floor : 0
       win_amt - vig_amt
+    end
+
+    def round_up_bet_amount_if_needed(bet_amount)
+      return bet_amount if bet_amount % for_every == 0
+
+      ((bet_amount + for_every)/for_every) * for_every
     end
 
     PAYS_EVEN = new(1, 1)
@@ -138,13 +145,13 @@ module QuickCraps
     HARD_10 = :hard_10
     FIELD_BET = :field
 
-    attr_reader :name, :wins_on, :loses_on, :payers, :for_every, :max_odds, :prop
+    attr_reader :name, :wins_on, :loses_on, :payer, :for_every, :max_odds, :prop
 
-    def initialize(name, wins_on, loses_on, payers, max_odds: nil, prop: false)
+    def initialize(name, wins_on, loses_on, payer, max_odds: nil, prop: false)
       @name = name 
       @wins_on = wins_on
       @loses_on = loses_on
-      @payers = payers
+      @payer = payer
       @max_odds = max_odds
       @prop = prop
     end
@@ -160,14 +167,20 @@ module QuickCraps
     end
 
     def winnings(player_roll, bet_amount)
-      payer = payers.is_a?(Hash) ? payers[player_roll.val] : payers
-      payer.payout(bet_amount)
+      pyr = payer.is_a?(Hash) ? payer[player_roll.val] : payer
+      pyr.payout(bet_amount)
     end
 
     def valid?(amount)
       return false if amount > Game::TABLE_LIMIT
       return false if amount < Game::BET_UNIT
       true
+    end
+
+    def appropriate_bet_amount(bet_amount)
+      return bet_amount if payer.is_a?(Hash) # FIELD pays for 1
+
+      payer.round_up_bet_amount_if_needed(bet_amount)
     end
 
     def prop?
@@ -236,15 +249,15 @@ module QuickCraps
     #   :won - player won the bet.
     #   :lost - player lost the bet.
     #
-    #   rail_amount is the amount commited to the bet from the Players rail
+    #   profit is the amount commited to the bet from the Players rail
     #   
     #
-    attr_reader :rail_amount, :bet_amount, :state
+    attr_reader :profit, :bet_amount, :state
 
     def initialize(amount)
       @state = :on
       @bet_amount = amount
-      @rail_amount = -bet_amount
+      @profit = -bet_amount
     end
 
     def on?
@@ -278,18 +291,19 @@ module QuickCraps
     def down!
       # terminates the bet
       @state = :down
-      @rail_amount = bet_amount
+      @profit = 0
     end
 
     def lost!
       # terminates the bet
       @state = :lost
+      @profit = 0
     end
 
     def won!(amount_won)
       # terminates the bet
       @state = :won
-      @rail_amount = bet_amount + amount_won
+      @profit = amount_won
     end
   end
 
@@ -299,10 +313,11 @@ module QuickCraps
 
     def initialize(bet, amount)
       @bet = bet
+      adjusted_amount = bet.appropriate_bet_amount(amount)
 
-      validate!(amount)
+      validate!(adjusted_amount)
 
-      @state = BetState.new(amount)
+      @state = BetState.new(adjusted_amount)
     end
 
     def evaluate(player_roll)
@@ -334,7 +349,7 @@ module QuickCraps
       {
         state: state.state,
         bet_amount: state.bet_amount,
-        rail_amount: state.rail_amount
+        profit: state.profit
       }
     end
   end
@@ -570,12 +585,14 @@ module QuickCraps
 
 
   class PlayerTurnStatsKeeper
-    attr_reader :outcome_counts, :place_counts, :point_counts
+    attr_reader :outcome_counts, :place_counts, :point_counts, :start_rail
 
-    def initialize
+    def initialize(player)
       @outcome_counts = Hash.new(0)
       @place_counts   = Hash.new(0)
       @point_counts   = Hash.new(0)
+
+      @start_rail     = player.rail # starting player rail
     end
 
     def tally(player_roll)
@@ -596,7 +613,10 @@ module QuickCraps
       {
         outcomes:      outcome_counts,
         point_winners: point_counts,
-        place_winners: place_counts
+        place_winners: place_counts,
+        money: {
+          start: start_rail,
+        }
       }
     end
   end
@@ -610,7 +630,7 @@ module QuickCraps
       @player = player
       @rolls = []
       @player_bets = PlayerBets.new
-      @stats_keeper = PlayerTurnStatsKeeper.new
+      @stats_keeper = PlayerTurnStatsKeeper.new(player)
     end
 
     def roll
@@ -689,10 +709,14 @@ module QuickCraps
     attr_reader :name
     attr_reader :turns
     attr_reader :dice
+    attr_reader :buyin
+    attr_reader :rail
 
-    def initialize(name:)
+    def initialize(name:, buyin:)
       @name = name
       @turns = []
+      @buyin = buyin
+      @rail = buyin
     end
 
     def new_player_turn(dice)
