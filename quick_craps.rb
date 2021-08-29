@@ -145,13 +145,13 @@ module QuickCraps
     HARD_10 = :hard_10
     FIELD_BET = :field
 
-    attr_reader :name, :wins_on, :loses_on, :payer, :for_every, :max_odds, :prop
+    attr_reader :name, :wins_on, :loses_on, :bet_payer, :for_every, :max_odds, :prop
 
-    def initialize(name, wins_on, loses_on, payer, max_odds: nil, prop: false)
+    def initialize(name, wins_on, loses_on, bet_payer, max_odds: nil, prop: false)
       @name = name 
       @wins_on = wins_on
       @loses_on = loses_on
-      @payer = payer
+      @bet_payer = bet_payer
       @max_odds = max_odds
       @prop = prop
     end
@@ -167,20 +167,19 @@ module QuickCraps
     end
 
     def winnings(player_roll, bet_amount)
-      pyr = payer.is_a?(Hash) ? payer[player_roll.val] : payer
-      pyr.payout(bet_amount)
+      payer = bet_payer.is_a?(Hash) ? bet_payer[player_roll.val] : bet_payer
+      payer.payout(bet_amount)
     end
 
     def valid?(amount)
-      return false if amount > Game::TABLE_LIMIT
-      return false if amount < Game::BET_UNIT
+      return false unless (Game::BET_UNIT..Game::TABLE_LIMIT).include?(amount)
       true
     end
 
     def appropriate_bet_amount(bet_amount)
-      return bet_amount if payer.is_a?(Hash) # FIELD pays for 1
+      return bet_amount if bet_payer.is_a?(Hash) # FIELD pays for 1
 
-      payer.round_up_bet_amount_if_needed(bet_amount)
+      bet_payer.round_up_bet_amount_if_needed(bet_amount)
     end
 
     def prop?
@@ -399,6 +398,10 @@ module QuickCraps
       end
     end
 
+    def inspect
+      stats
+    end
+
     private
 
     def create_bet(bet, amount)
@@ -585,12 +588,13 @@ module QuickCraps
 
 
   class PlayerTurnStatsKeeper
-    attr_reader :outcome_counts, :place_counts, :point_counts, :start_rail
+    attr_reader :outcome_counts, :place_counts, :point_counts, :start_rail, :turn_number
 
-    def initialize(player)
+    def initialize(player, turn_number)
       @outcome_counts = Hash.new(0)
       @place_counts   = Hash.new(0)
       @point_counts   = Hash.new(0)
+      @turn_number    = turn_number
 
       @start_rail     = player.rail # starting player rail
     end
@@ -611,6 +615,7 @@ module QuickCraps
 
     def to_hash
       {
+        turn:          turn_number,
         outcomes:      outcome_counts,
         point_winners: point_counts,
         place_winners: place_counts,
@@ -625,12 +630,12 @@ module QuickCraps
   class PlayerTurn
     attr_reader :dice, :player, :rolls, :stats_keeper, :player_bets
 
-    def initialize(player, dice)
+    def initialize(player, dice, turn_number)
       @dice = dice
       @player = player
       @rolls = []
       @player_bets = PlayerBets.new
-      @stats_keeper = PlayerTurnStatsKeeper.new(player)
+      @stats_keeper = PlayerTurnStatsKeeper.new(player, turn_number)
     end
 
     def roll
@@ -672,6 +677,10 @@ module QuickCraps
       end
       self
     end
+
+    def inspect
+      stats
+    end
   end
 
 
@@ -694,7 +703,7 @@ module QuickCraps
       longest_turn = @player.turns.max_by {|t| t.stats[:outcomes][:total_rolls]}
       {
         rolls: longest_turn.rolls.inspect,
-        stats: longest_turn.stats
+        longest_stats: longest_turn.stats
       }
     end
 
@@ -720,7 +729,7 @@ module QuickCraps
     end
 
     def new_player_turn(dice)
-      PlayerTurn.new(self, dice).tap do |turn|
+      PlayerTurn.new(self, dice, turns.length + 1).tap do |turn|
         @turns << turn
       end
     end
