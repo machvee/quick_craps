@@ -1,5 +1,5 @@
 #
-# QuickCraps - plays 1000's of shooters at a table, and keeps stats on their rolls/turns.
+# QuickCraps - plays 1000's of shooter turns at a table, for hours at a time, and keeps stats on their rolls/turns.
 #    Learn quickly how length of a shooters roll will translate to $$ win/loss.
 #    Provide procs that determine how to bet and how to press on Pass Line, Place, Hardways, and Field
 #    and compare strategies
@@ -48,14 +48,13 @@ module QuickCraps
     end
 
     def stats
-      (@seed ? {seed: @seed} : {}).merge(
-        {
-          players: players.map(&:stats),
-          hours_of_play: @hours_of_play,
-          total_turns: total_turns,
-          dice: dice.stats
-        }
-      )
+      {
+        seed: @seed,
+        players: players.map(&:stats),
+        hours_of_play: @hours_of_play,
+        total_turns: total_turns,
+        dice: dice.stats
+      }
     end
 
     def inspect
@@ -333,10 +332,9 @@ module QuickCraps
 
     def stats
       {
-        name: bet.name,
         state: state.state,
-        bet_amount: bet_amount,
-        rail_amount: rail_amount
+        bet_amount: state.bet_amount,
+        rail_amount: state.rail_amount
       }
     end
   end
@@ -376,6 +374,14 @@ module QuickCraps
 
       ensure_bet(Bet::PASS_POINT[point], pass_line_amount)
       ensure_bet(Bet::PASS_ODDS[point], odds_amount)
+    end
+
+    def stats
+      {}.tap do |bet_stats|
+        player_bets.each do |bet_name, bets|
+          bet_stats[bet_name] = bets.map(&:stats)
+        end
+      end
     end
 
     private
