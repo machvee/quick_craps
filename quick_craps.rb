@@ -588,7 +588,7 @@ module QuickCraps
 
 
   class PlayerTurnStatsKeeper
-    attr_reader :outcome_counts, :place_counts, :point_counts, :start_rail, :turn_number
+    attr_reader :outcome_counts, :place_counts, :point_counts, :start_rail, :turn_number, :profit
 
     def initialize(player, turn_number)
       @outcome_counts = Hash.new(0)
@@ -597,6 +597,7 @@ module QuickCraps
       @turn_number    = turn_number
 
       @start_rail     = player.rail # starting player rail
+      @profit         = 0 # amount won/lost +/- this turn
     end
 
     def tally(player_roll)
@@ -693,6 +694,8 @@ module QuickCraps
     def to_hash
       {
         name:                   @player.name,
+        buyin:                  @player.buyin,
+        rail:                   @player.rail,
         roll_lengths:           calculated_roll_lengths,
         longest_roll:           longest_roll_stats,
         avg_rolls_before_7_out: @player.average_rolls_before_7_out
