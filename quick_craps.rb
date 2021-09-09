@@ -33,7 +33,7 @@ module QuickCraps
 
     def next_player_turn
       @shooter = players[calc_next_player]
-      play_craps(shooter.new_player_turn(dice))
+      play_craps
     end
 
     def self.run(**args)
@@ -78,8 +78,8 @@ module QuickCraps
       next_player_ind
     end
 
-    def play_craps(player_turn)
-      Round.new(player_turn).play!
+    def play_craps
+      ShooterRollsUntilSevenOut.new(shooter.new_player_turn(dice)).play!
     end
   end
 
@@ -251,12 +251,14 @@ module QuickCraps
     #   profit is the amount commited to the bet from the Players rail
     #   
     #
-    attr_reader :profit, :bet_amount, :state
+    attr_reader :profit_loss, :start_bet_amount, :current_bet_amount, :winnings, :state
 
-    def initialize(amount)
-      @state = :on
-      @bet_amount = amount
-      @profit = -bet_amount
+    def initialize(amount, init_state: :on)
+      @state = init_state
+      @start_bet_amount = amount
+      @current_bet_amount = amount
+      @winnings = 0
+      @profit_loss = -current_bet_amount
     end
 
     def on?
@@ -267,16 +269,12 @@ module QuickCraps
       state == :off
     end
 
-    def active?
-      on? || off?
-    end
-
-    def won?
-      @state == :won
-    end
-
     def lost?
       @state == :lost
+    end
+
+    def active?
+      on? || off?
     end
 
     def off!
@@ -287,28 +285,93 @@ module QuickCraps
       @state = :on
     end
 
-    def down!
-      # terminates the bet
-      @state = :down
-      @profit = 0
-    end
+    def down!(amount = @current_bet_amount + @winnings)
+      # deduct amount first from winnings, then any remainder
+      # from @current_bet_amount
+      deduction = amount
+      win_deduction = [winnings, amount].min
+      @winnings -= win_deduction
+      @profit_loss += win_deduction
+      deduction -= win_deduction
 
-    def lost!
-      # terminates the bet
-      @state = :lost
-      @profit = 0
+      if deduction > 0
+        @current_bet_amount -= deduction
+        raise "invalid down! amount #{amount}" if @current_bet_amount < 0
+        @profit_loss += deduction
+      end
+
+      @state = :down if @current_bet_amount == 0
     end
 
     def won!(amount_won)
-      # terminates the bet
-      @state = :won
-      @profit = amount_won
+      @winnings += amount_won
+    end
+
+    def lost!
+      @state = :lost
+    end
+
+    def press!(press_amount = @winnings)
+      # press the current_bet_amount by amount, 
+      # using any and all winnings first.   Take
+      # or add to profit based on how much winnings
+      # covered the press amount (e.g. power press)
+      @current_bet_amount += press_amount
+      @winnings -= press_amount
+      @profit_loss += winnings
+      @winnings = 0
+    end
+
+    def inspect
+      {
+        state: state,
+        start_bet_amount: start_bet_amount,        
+        current_bet_amount: current_bet_amount,
+        profit: profit_loss
+      }
+    end
+  end
+
+
+  class BetEventHandler
+    attr_reader  :events, :state
+
+    def initialize(player_bet)
+      @player_bet = player_bet
+      @events = []
+    end
+
+    def fire!(event_name, **args)
+      events << {name: event_name, **args}
+      case event_name
+      when :make_bet
+        # user makes his initial bet, establishing start state
+        @state = BetState.new(args[:amount])
+      when :press_bet
+        state.press!(args[:amount])
+      when :won
+        state.won!(args[:amount])
+      when :take_profit
+        state.down!(args[:amount])
+      when :on
+        state.on!
+      when :off
+        state.off!
+      when :take_down
+        state.down!
+      when :lost
+        state.lost!
+      end
+    end
+
+    def inspect
+      events
     end
   end
 
 
   class PlayerBet
-    attr_reader :bet, :state
+    attr_reader :bet, :event_handler
 
     def initialize(bet, amount)
       @bet = bet
@@ -316,20 +379,33 @@ module QuickCraps
 
       validate!(adjusted_amount)
 
-      @state = BetState.new(adjusted_amount)
+      @event_handler = BetEventHandler.new(self)
+      event_handler.fire!(:make_bet, amount: adjusted_amount)
+    end
+
+    def state
+      event_handler.state
     end
 
     def evaluate(player_roll)
       return 0 if state.off?
 
-      bet_outcome_amount = bet.evaluate(player_roll, state.bet_amount)
+      bet_outcome_amount = bet.evaluate(player_roll, state.current_bet_amount)
 
       if bet_outcome_amount > 0
-        state.won!(bet_outcome_amount)
+        event_handler.fire!(:won, amount: bet_outcome_amount)
       elsif bet_outcome_amount < 0
-        state.lost!
+        event_handler.fire!(:lost)
       end
       bet_outcome_amount
+    end
+
+    def on!
+      state.on!
+    end
+
+    def off!
+      state.off!
     end
 
     def active?
@@ -345,11 +421,11 @@ module QuickCraps
     end
 
     def stats
-      {
-        state: state.state,
-        bet_amount: state.bet_amount,
-        profit: state.profit
-      }
+      state
+    end
+
+    def inspect
+      stats.inspect
     end
   end
 
@@ -399,7 +475,7 @@ module QuickCraps
     end
 
     def inspect
-      stats
+      stats.inspect
     end
 
     private
@@ -447,7 +523,7 @@ module QuickCraps
   end
 
 
-  class Round
+  class ShooterRollsUntilSevenOut
     WINNERS=[7,11]
     POINTS=[4,5,6,8,9,10]
     CRAPS=[2,3,12]

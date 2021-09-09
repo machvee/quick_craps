@@ -48,8 +48,8 @@ Oktest.scope do
     spec "expected initial state and amounts" do
       ok {@bs.on?}.truthy?
       ok {@bs.off?}.falsy?
-      ok {@bs.bet_amount} == @amount
-      ok {@bs.rail_amount} == -@amount
+      ok {@bs.current_bet_amount} == @amount
+      ok {@bs.profit_loss} == -@amount
     end
 
     topic "can be lost!" do
@@ -57,8 +57,8 @@ Oktest.scope do
         @bs.lost!
       end
 
-      spec "has expected rail_amount" do
-        ok {@bs.rail_amount} == -@amount
+      spec "has expected profit" do
+        ok {@bs.profit_loss} == -@amount
         ok {@bs.lost?}.truthy?
       end
     end
@@ -69,9 +69,12 @@ Oktest.scope do
         @bs.won!(@win_amount)
       end
 
-      spec "has expected rail_amount" do
-        ok {@bs.rail_amount} == @amount + @win_amount
-        ok {@bs.won?}.truthy?
+      spec "has expected profit" do
+        ok {@bs.winnings} == @win_amount
+      end
+
+      spec "is still on after win" do
+        ok {@bs.on?}.truthy?
       end
     end
 
