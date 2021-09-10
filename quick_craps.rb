@@ -322,13 +322,18 @@ module QuickCraps
       @winnings = 0
     end
 
-    def inspect
+    def stats
       {
         state: state,
         start_bet_amount: start_bet_amount,        
         current_bet_amount: current_bet_amount,
         profit: profit_loss
       }
+    end
+
+
+    def inspect
+      stats.to_s
     end
   end
 
@@ -365,7 +370,7 @@ module QuickCraps
     end
 
     def inspect
-      events
+      events.to_s
     end
   end
 
@@ -432,14 +437,14 @@ module QuickCraps
 
 
   class PlayerBets
-    attr_reader :player_bets
+    attr_reader :table_bets
 
     def initialize
-      @player_bets = Hash.new {|h,k| h[k] = []}
+      @table_bets = Hash.new {|h,k| h[k] = []}
     end
 
     def each_active_bet
-      player_bets.each do |name, bet_array|
+      table_bets.each do |name, bet_array|
         last_bet = bet_array.last
         next if last_bet.nil? || !last_bet.active?
 
@@ -469,7 +474,7 @@ module QuickCraps
 
     def stats
       {}.tap do |bet_stats|
-        player_bets.each do |bet_name, bets|
+        table_bets.each do |bet_name, bets|
           bet_stats[bet_name] = bets.map(&:stats)
         end
       end
@@ -483,12 +488,12 @@ module QuickCraps
 
     def create_bet(bet, amount)
       PlayerBet.new(bet, amount).tap do |player_bet|
-        player_bets[bet.name].push(player_bet)
+        table_bets[bet.name].push(player_bet)
       end
     end
 
     def active_bet(bet)
-      candidate = player_bets[bet.name].last
+      candidate = table_bets[bet.name].last
       candidate && candidate.state.active? ? candidate : nil
     end
   end
@@ -541,7 +546,7 @@ module QuickCraps
     end
 
     def player_roll
-      player_turn.make_bets(table_state)
+      player_turn.make_bet_decisions(table_state)
 
       roll = player_turn.roll
 
@@ -575,9 +580,9 @@ module QuickCraps
         end
       end
 
-      player_turn.pay_bets(roll)
+      player_turn.resolve_bet_outcomes(roll)
 
-      player_turn.keep_stats(roll)
+      player_turn.keep_stats(roll, table_state)
 
       keep_rolling
     end
@@ -668,15 +673,16 @@ module QuickCraps
     attr_reader :outcome_counts, :place_counts, :point_counts, :start_rail, :turn_number
 
     def initialize(player, turn_number)
-      @outcome_counts = Hash.new(0)
-      @place_counts   = Hash.new(0)
-      @point_counts   = Hash.new(0)
-      @turn_number    = turn_number
-
-      @start_rail     = player.rail # starting player rail
+      @outcome_counts     = Hash.new(0)
+      @place_counts       = Hash.new(0)
+      @point_counts       = Hash.new(0)
+      @turn_number        = turn_number
+      @start_rail         = player.rail # starting player rail
+      @longest_point      = 0
+      @point_roll_counter = 0
     end
 
-    def tally(player_roll)
+    def tally(player_roll, table_state)
       raise "no outcome yet" if player_roll.outcome.nil?
 
       outcome_counts[:total_rolls] += 1
@@ -685,8 +691,17 @@ module QuickCraps
       case player_roll.outcome
       when PlayerRoll::PLACE_WINNER
         place_counts[player_roll.val] += 1
+        @point_roll_counter += 1
+      when PlayerRoll::POINT_ESTABLISHED
+        @point_roll_counter = 0
       when PlayerRoll::POINT_WINNER
         point_counts[player_roll.val] += 1
+        @point_roll_counter += 1
+        if @longest_point < @point_roll_counter
+          @longest_point = @point_roll_counter
+        end
+      else
+        @point_roll_counter += 1 if table_state.on?
       end
     end
 
@@ -696,6 +711,7 @@ module QuickCraps
         outcomes:      outcome_counts,
         point_winners: point_counts,
         place_winners: place_counts,
+        longest_point: @longest_point,
         money: {
           start: start_rail,
         }
@@ -721,15 +737,22 @@ module QuickCraps
       end
     end
 
-    def keep_stats(roll)
-      stats_keeper.tally(roll)
+    def keep_stats(roll, table_state)
+      stats_keeper.tally(roll, table_state)
     end
 
     def stats
       stats_keeper.to_hash
     end
 
-    def make_bets(table_state)
+    def make_bet_decisions(table_state)
+      # 
+      # possible actions:
+      #   make new bets
+      #   take down any profits from bet winnings from previous rolls
+      #   press bets from rail or winnings from previous rolls
+      #   take down bets
+      #   mark bets on/off
       if table_state.off?
         player_bets.ensure_pass_line(Game::BET_UNIT)
       else
@@ -748,7 +771,7 @@ module QuickCraps
       end
     end
 
-    def pay_bets(roll)
+    def resolve_bet_outcomes(roll)
       player_bets.each_active_bet do |active_bet|
         active_bet.evaluate(roll)
       end
@@ -756,7 +779,7 @@ module QuickCraps
     end
 
     def inspect
-      stats
+      stats.to_s
     end
   end
 
@@ -846,7 +869,7 @@ module QuickCraps
     end
 
     def inspect
-      @val
+      @val.to_s
     end
   end
 
