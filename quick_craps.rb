@@ -380,6 +380,7 @@ module QuickCraps
       validate!(adjusted_amount)
 
       @event_handler = BetEventHandler.new(self)
+
       event_handler.fire!(:make_bet, amount: adjusted_amount)
     end
 
@@ -664,7 +665,7 @@ module QuickCraps
 
 
   class PlayerTurnStatsKeeper
-    attr_reader :outcome_counts, :place_counts, :point_counts, :start_rail, :turn_number, :profit
+    attr_reader :outcome_counts, :place_counts, :point_counts, :start_rail, :turn_number
 
     def initialize(player, turn_number)
       @outcome_counts = Hash.new(0)
@@ -673,7 +674,6 @@ module QuickCraps
       @turn_number    = turn_number
 
       @start_rail     = player.rail # starting player rail
-      @profit         = 0 # amount won/lost +/- this turn
     end
 
     def tally(player_roll)
