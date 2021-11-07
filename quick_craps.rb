@@ -58,10 +58,6 @@ module QuickCraps
       }
     end
 
-    def dice_stats_keepers
-      [6,7,8,12].map {|n| ConsecutiveNumberStatsKeeper.new(n.to_s, n)}
-    end
-
     def inspect
       "#{players.length} players, #{dice.total_rolls} rolls of dice"
     end
@@ -84,6 +80,10 @@ module QuickCraps
 
     def play_craps
       ShooterRollsUntilSevenOut.new(shooter.new_player_turn(dice)).play!
+    end
+
+    def dice_stats_keepers
+      [6,7,8,12].map {|n| ConsecutiveNumberStatsKeeper.new(n)}
     end
   end
 
@@ -950,7 +950,7 @@ module QuickCraps
       @freqs[val] += 1
 
       stats_keepers.each do |keeper|
-        keeper.tally(val)
+        keeper.tally(self)
       end
     end
   end
@@ -960,14 +960,14 @@ class ConsecutiveNumberStatsKeeper
   attr_reader :name
   attr_reader :number
 
-  def initialize(name, number)
-    @name = name
+  def initialize(number)
+    @name = "consecutive #{number}'s"
     @number = number
     reset
   end
 
-  def tally(val)
-    if val == number
+  def tally(dice)
+    if dice.val == number
       @count += 1
     else
       if @max < @count
@@ -978,7 +978,7 @@ class ConsecutiveNumberStatsKeeper
   end
 
   def to_s
-    "%d consecutive #{number}'s" % @max
+    @max.to_s
   end
 
   def reset
