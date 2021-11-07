@@ -28,7 +28,7 @@ module QuickCraps
       @total_turns = @hours_of_play * ROLLS_PER_HOUR
       @shooter = nil
       @seed = seed
-      @dice = Dice.new(seed: @seed)
+      @dice = Dice.new(seed: @seed, stats_keepers: dice_stats_keepers)
     end
 
     def next_player_turn
@@ -56,6 +56,10 @@ module QuickCraps
         total_turns: total_turns,
         dice: dice.stats
       }
+    end
+
+    def dice_stats_keepers
+      [6,7,8,12].map {|n| ConsecutiveNumberStatsKeeper.new(n.to_s, n)}
     end
 
     def inspect
@@ -876,16 +880,18 @@ module QuickCraps
 
   class Dice
     attr_reader :val, :total_rolls
+    attr_reader :stats_keepers
 
     BIG_NUM = 2**128
 
-    def initialize(num_dies=2, seed:)
+    def initialize(num_dies=2, seed:, stats_keepers: [])
       main_prng = Random.new(seed)
       @dies = num_dies.times.each_with_object([]) do |n, o|
         die_prng = Random.new(main_prng.rand(BIG_NUM))
         o << Die.new(prng: die_prng)
       end
       @freqs = Array.new(max_sum + 1)
+      @stats_keepers = stats_keepers
       reset
     end
 
@@ -902,6 +908,7 @@ module QuickCraps
     def reset
       @freqs.fill(0)
       @total_rolls = 0
+      stats_keepers.each(&:reset)
       shake
     end
 
@@ -914,7 +921,9 @@ module QuickCraps
       {
         total_rolls: @total_rolls,
         frequency: @freqs[2..-1].map.with_index(2) {|v, i| [i, v]}.to_h
-      }
+      }.merge(
+        stats_keepers.length > 0 ? stats_keepers.map {|k| [k.name, k.to_s]}.to_h : {}
+      )
     end
 
     def to_s
@@ -939,7 +948,42 @@ module QuickCraps
     def keep_stats
       @total_rolls += 1
       @freqs[val] += 1
+
+      stats_keepers.each do |keeper|
+        keeper.tally(val)
+      end
     end
+  end
+end
+
+class ConsecutiveNumberStatsKeeper
+  attr_reader :name
+  attr_reader :number
+
+  def initialize(name, number)
+    @name = name
+    @number = number
+    reset
+  end
+
+  def tally(val)
+    if val == number
+      @count += 1
+    else
+      if @max < @count
+        @max = @count
+      end
+      @count = 0
+    end
+  end
+
+  def to_s
+    "%d consecutive #{number}'s" % @max
+  end
+
+  def reset
+    @max = 0
+    @count = 0
   end
 end
 
